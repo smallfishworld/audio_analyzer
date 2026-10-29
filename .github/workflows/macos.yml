@@ -48,6 +48,11 @@ jobs:
           test -x "src-tauri/binaries/ffmpeg-${{ matrix.target }}"
           test -x "src-tauri/binaries/ffprobe-${{ matrix.target }}"
           src-tauri/binaries/ffmpeg-${{ matrix.target }} -version
+      - name: Smoke-test actual bundled FFmpeg codecs
+        env:
+          AUDIO_ANALYZER_FFMPEG: src-tauri/binaries/ffmpeg-${{ matrix.target }}
+          AUDIO_ANALYZER_FFPROBE: src-tauri/binaries/ffprobe-${{ matrix.target }}
+        run: node scripts/verify-bundled-ffmpeg.mjs
       - name: Validate native Rust app
         run: cargo check --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }}
       - name: Build macOS application and DMG
@@ -66,6 +71,9 @@ jobs:
           test -x "$APP/Contents/MacOS/ffprobe"
           "$APP/Contents/MacOS/ffmpeg" -version
           "$APP/Contents/MacOS/ffprobe" -version
+          AUDIO_ANALYZER_FFMPEG="$APP/Contents/MacOS/ffmpeg" \
+          AUDIO_ANALYZER_FFPROBE="$APP/Contents/MacOS/ffprobe" \
+            node scripts/verify-bundled-ffmpeg.mjs
           find "$APP/Contents/Resources" -name 'ffmpeg-9.0.2.tar.xz' -print -quit | grep -q ffmpeg
           hdiutil verify "$DMG"
           BINARY="$(find "$APP/Contents/MacOS" -maxdepth 1 -type f -perm -111 -print -quit)"
