@@ -35,12 +35,33 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm run build
       - run: npm run prepare:icons
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            make tar xz curl diffutils
+            mingw-w64-ucrt-x86_64-gcc
+      - name: Build bundled LGPL FFmpeg and matching source
+        shell: msys2 {0}
+        run: |
+          export RUNNER_TEMP="$PWD/.ffmpeg-work"
+          bash scripts/build-ffmpeg-sidecar.sh x86_64-pc-windows-msvc
+          test -s src-tauri/binaries/ffmpeg-x86_64-pc-windows-msvc.exe
+          test -s src-tauri/binaries/ffprobe-x86_64-pc-windows-msvc.exe
+      - name: Verify staged FFmpeg executables on Windows
+        shell: pwsh
+        run: |
+          & "src-tauri/binaries/ffmpeg-x86_64-pc-windows-msvc.exe" -version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & "src-tauri/binaries/ffprobe-x86_64-pc-windows-msvc.exe" -version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
       - run: cargo check --manifest-path src-tauri/Cargo.toml
       - name: Build unsigned Windows M1 preview installer
         run: npm run tauri build -- --bundles nsis
       - uses: actions/upload-artifact@v4
         with:
-          name: audio-analyzer-m1-preview-windows
+          name: audio-analyzer-m1-self-contained-windows
           path: src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
 
