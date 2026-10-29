@@ -1,4 +1,5 @@
 pub mod ffmpeg;
+mod process;
 pub use ffmpeg::AudioMetadata;
 use realfft::RealFftPlanner;
 use serde::{Deserialize, Serialize};
