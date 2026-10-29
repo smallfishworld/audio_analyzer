@@ -56,6 +56,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           & "src-tauri/binaries/ffprobe-x86_64-pc-windows-msvc.exe" -version
           if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: Smoke-test bundled FFmpeg codecs
+        shell: pwsh
+        run: |
+          $env:AUDIO_ANALYZER_FFMPEG = (Resolve-Path "src-tauri/binaries/ffmpeg-x86_64-pc-windows-msvc.exe").Path
+          $env:AUDIO_ANALYZER_FFPROBE = (Resolve-Path "src-tauri/binaries/ffprobe-x86_64-pc-windows-msvc.exe").Path
+          node scripts/verify-bundled-ffmpeg.mjs
       - run: cargo check --manifest-path src-tauri/Cargo.toml
       - name: Build unsigned Windows M1 preview installer
         run: npm run tauri build -- --bundles nsis
