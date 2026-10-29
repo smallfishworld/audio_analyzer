@@ -14,6 +14,8 @@ jobs:
           node-version: "22"
       - run: npm install --no-audit --no-fund
       - run: npm run build
+      - name: FFmpeg codec spike (installed runner binary)
+        run: node scripts/verify-ffmpeg.mjs
   audio-core:
     runs-on: ubuntu-latest
     steps:
