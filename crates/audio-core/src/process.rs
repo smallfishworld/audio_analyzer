@@ -88,6 +88,17 @@ pub fn run_bounded(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    #[test]
+    fn child_that_stalls_is_terminated() {
+        let mut cmd = Command::new("sleep");
+        cmd.arg("3");
+        let start = Instant::now();
+        let error = run_bounded(&mut cmd, Duration::from_millis(100), 100, 100)
+            .err().expect("process should time out");
+        assert!(error.contains("timed out"));
+        assert!(start.elapsed() < Duration::from_secs(2));
+    }
     #[test]
     fn absent_binary_is_an_error() {
         let mut cmd = Command::new("audio_analyzer_missing_binary_for_test_57291");
