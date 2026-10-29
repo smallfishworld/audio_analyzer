@@ -1,7 +1,7 @@
 # M1 多格式音频导入 — 阶段验证记录
 
 > 日期：2026-10-29
-> 状态：进行中（以 GitHub Actions 实际结果为准）
+> 状态：M1 第一阶段预览（0.2.0-alpha.1），M1 全部目标尚未完成
 > 对应需求：[spec.md](../spec.md) / [tech.md](../tech.md)
 
 ## 已实现源码
@@ -38,3 +38,10 @@
 ## 测试记录
 
 见 GitHub Actions。只有具体工作流跑完并通过后才记录为成功。测试包括：Rust core 单测、8 种合成格式 probe/decode_preview、错误媒体处理、前端构建、Windows Tauri 编译与 NSIS 打包。
+
+## CI 验证记录
+
+- PR #2: https://github.com/smallfishworld/audio_analyzer/pull/2
+- CI #11: https://github.com/smallfishworld/audio_analyzer/actions/runs/40884900275
+- 已确认通过：前端 TypeScript/Vite、Rust core 单元测试、8 种格式 Rust 集成解码测试。
+- Windows 编译/安装包构建：以工作流最终结论为准；未经过 Windows 实机启动与安装验收。
