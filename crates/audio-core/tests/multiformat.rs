@@ -1,8 +1,13 @@
 use audio_core::ffmpeg::{decode_preview, probe};
 use std::path::PathBuf;
 fn fixture(name: &str) -> PathBuf {
-    PathBuf::from(std::env::var("AUDIO_ANALYZER_FIXTURES")
-        .unwrap_or_else(|_| "tests/fixtures/generated".into())).join(name)
+    let base = std::env::var("AUDIO_ANALYZER_FIXTURES")
+        .unwrap_or_else(|_| "tests/fixtures/generated".into());
+    let folder = PathBuf::from(base);
+    let folder = if folder.is_absolute() { folder } else {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").join(folder)
+    };
+    folder.join(name)
 }
 #[test]
 fn all_m1_formats_probe_and_analyze() {
