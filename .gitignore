@@ -10,3 +10,6 @@ dist/
 
 # Generated reproducibly by npm run prepare:icons
 src-tauri/icons/
+
+# Generated codec test fixtures
+tests/fixtures/generated/
