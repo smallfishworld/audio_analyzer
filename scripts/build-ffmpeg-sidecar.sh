@@ -13,7 +13,14 @@ if [[ ! -s "$ARCHIVE" ]]; then
   curl --fail --location --retry 3 --proto '=https' --tlsv1.2 \
     "https://ffmpeg.org/releases/ffmpeg-${VER}.tar.xz" -o "$ARCHIVE"
 fi
-printf "%s  %s\n" "$SRC_SHA256" "$ARCHIVE" | sha256sum --check --status
+if command -v sha256sum >/dev/null 2>&1; then
+  ACTUAL="$(sha256sum "$ARCHIVE" | awk '{print $1}')"
+else
+  ACTUAL="$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')"
+fi
+if [[ "$ACTUAL" != "$SRC_SHA256" ]]; then
+  echo "FFmpeg source SHA-256 mismatch: $ACTUAL" >&2; exit 1
+fi
 mkdir -p "$WORK/src"
 tar -xf "$ARCHIVE" -C "$WORK/src"
 cd "$WORK/src/ffmpeg-${VER}"
@@ -25,7 +32,7 @@ FLAGS=(
   --disable-shared --enable-static --disable-x86asm
 )
 case "$TARGET" in
-  x86_64-pc-windows-gnu)
+  x86_64-pc-windows-msvc)
     FLAGS+=(--target-os=mingw32 --arch=x86_64 --extra-ldexeflags=-static)
     SUFFIX=".exe";;
   *-apple-darwin)
@@ -68,7 +75,8 @@ cp LICENSE.md "$DEST/FFMPEG-LICENSE.md"
   echo "Exact build command: bash scripts/build-ffmpeg-sidecar.sh $TARGET"
   echo "Upstream source modifications: none"
 } > "$DEST/BUILD-INFO.txt"
-sha256sum "$ROOT/src-tauri/binaries/ffmpeg-$TARGET${SUFFIX}" \
-          "$ROOT/src-tauri/binaries/ffprobe-$TARGET${SUFFIX}" \
-          "$DEST/ffmpeg-${VER}.tar.xz" > "$DEST/SHA256SUMS.txt"
+if command -v sha256sum >/dev/null 2>&1; then HASH=sha256sum; else HASH="shasum -a 256"; fi
+$HASH "$ROOT/src-tauri/binaries/ffmpeg-$TARGET${SUFFIX}" \
+      "$ROOT/src-tauri/binaries/ffprobe-$TARGET${SUFFIX}" \
+      "$DEST/ffmpeg-${VER}.tar.xz" > "$DEST/SHA256SUMS.txt"
 echo "Staged LGPL FFmpeg/ffprobe, matching source and licenses for $TARGET"
