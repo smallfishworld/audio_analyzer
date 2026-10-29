@@ -1,6 +1,8 @@
 //! Bounded audio preview through a locally available FFmpeg/ffprobe pair.
 //! Never invokes a shell, accepts network URLs or silently changes the first channel.
 use crate::{analyze, validate, AnalysisSnapshot};
+use crate::process::run_bounded;
+use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -57,13 +59,12 @@ fn safe_path(path: &Path) -> Result<&Path, String> {
 }
 pub fn probe(path: &Path) -> Result<AudioMetadata, String> {
     safe_path(path)?;
-    let output = Command::new(bin("ffprobe"))
-        .args(["-v", "error", "-protocol_whitelist", "file",
-            "-show_entries",
-            "stream=index,codec_type,codec_name,sample_rate,channels,bits_per_raw_sample,bits_per_sample,bit_rate:format=format_name,duration,bit_rate",
-            "-of", "json", "--"])
-        .arg(path)
-        .output().map_err(|e| format!("ffprobe failed to start: {e}. Install FFmpeg and ffprobe."))?;
+    let mut cmd = Command::new(bin("ffprobe"));
+    cmd.args(["-v", "error", "-protocol_whitelist", "file",
+        "-show_entries",
+        "stream=index,codec_type,codec_name,sample_rate,channels,bits_per_raw_sample,bits_per_sample,bit_rate:format=format_name,duration,bit_rate",
+        "-of", "json", "--"]).arg(path);
+    let output = run_bounded(&mut cmd, Duration::from_secs(15), 1024*1024, 32*1024)?;
     if !output.status.success() {
         return Err(format!("ffprobe could not inspect audio: {}",
             String::from_utf8_lossy(&output.stderr).chars().take(600).collect::<String>()));
@@ -96,15 +97,15 @@ pub fn decode_preview(path: &Path) -> Result<AnalysisSnapshot, String> {
     // No implicit resampling or channel mix: first channel copied via explicit pan mapping.
     let max_frames = (metadata.sample_rate_hz as usize).saturating_mul(3).min(576_000);
     let seconds = max_frames as f64 / metadata.sample_rate_hz as f64;
-    let output = Command::new(bin("ffmpeg"))
-        .args(["-nostdin", "-hide_banner", "-loglevel", "error",
-            "-protocol_whitelist", "file", "-i"])
-        .arg(path)
+    let mut cmd = Command::new(bin("ffmpeg"));
+    cmd.args(["-nostdin", "-hide_banner", "-loglevel", "error", "-threads", "1",
+        "-protocol_whitelist", "file", "-i"]).arg(path)
         .args(["-map", &format!("0:{}", metadata.audio_stream_index),
             "-vn", "-sn", "-dn",
             "-af", "pan=mono|c0=c0", "-t", &format!("{seconds:.8}"),
-            "-c:a", "pcm_f64le", "-f", "f64le", "pipe:1"])
-        .output().map_err(|e| format!("ffmpeg could not start: {e}. Install FFmpeg and ffprobe."))?;
+            "-c:a", "pcm_f64le", "-f", "f64le", "pipe:1"]);
+    let output = run_bounded(&mut cmd, Duration::from_secs(30),
+        max_frames.saturating_add(2).saturating_mul(8), 32*1024)?;
     if !output.status.success() {
         return Err(format!("Audio decode failed: {}",
             String::from_utf8_lossy(&output.stderr).chars().take(600).collect::<String>()));
