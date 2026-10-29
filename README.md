@@ -53,3 +53,7 @@ AUDIO_ANALYZER_RUN_CODEC_TESTS=1 cargo test --manifest-path crates/audio-core/Ca
 ~~~
 
 项目不会自动联网下载 FFmpeg，正式独立分发需先通过许可证审核与 Windows 打包测试。详见 [M1 验证记录](docs/m1-validation.md)。
+
+## M1 Preview 版本说明
+
+版本：0.2.0-alpha.1。CI 安装包 Artifact 名为 audio-analyzer-m1-preview-windows。此预览包**不附带 FFmpeg 二进制**；要打开压缩音频，需要运行机 PATH 中有 ffmpeg 与 ffprobe。未签名，不是正式发布。
