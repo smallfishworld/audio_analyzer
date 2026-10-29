@@ -1,6 +1,6 @@
 # Audio Analyzer
 
-免费开源、离线优先的专业音频文件分析仪。基于 Tauri 2、React、Rust、realfft、uPlot。
+免费开源、离线优先的专业音频文件分析仪，支持 **Windows x64 / macOS Apple Silicon 与 Intel**（macOS 目前为未公证的开发预览版），基于 Tauri 2、React、Rust、realfft、uPlot。
 
 当前进度：**M1 多格式导入开发中**。已实现 Rust FFmpeg/ffprobe 解码适配器和元数据分析，支持系统安装了 ffmpeg 与 ffprobe 的开发环境。**Windows 安装包仍不内置 FFmpeg**，因此不能声称压缩格式已做到开箱即用。
 
@@ -16,7 +16,7 @@
 
 ## 开发运行
 
-需 Node.js 22、Rust stable、Tauri 2 Windows 前置依赖（WebView2/Visual C++ Build Tools）。
+需要 Node.js 22、Rust stable、Tauri 2 对应平台构建依赖（Windows：WebView2/Visual C++ Build Tools；macOS：Xcode Command Line Tools）。
 
 ~~~sh
 npm install
@@ -31,6 +31,7 @@ cargo test --manifest-path crates/audio-core/Cargo.toml
 - [产品需求](spec.md)
 - [技术方案](tech.md)
 - [M0 验收记录](docs/m0-validation.md)
+- [macOS ARM64 / Intel 构建及验收](docs/macos-validation.md)
 
 不提供专用多 MIC 一致性及自动良率判定功能。
 
@@ -65,3 +66,18 @@ AUDIO_ANALYZER_RUN_CODEC_TESTS=1 cargo test --manifest-path crates/audio-core/Ca
 [完整审查与剩余任务](docs/code-review-m0-m1.md)。
 
 注意：**只能查看所选通道最前面 3 秒/最多 576000 帧的预览**，尚非全文件分析；这与多 MIC 一致性自动判定无关。M1 Windows 安装包尚未内置 FFmpeg。
+
+## macOS 开发版（Apple Silicon / Intel）
+
+macOS 两套原生构建分别采用 GitHub `macos-15` 与 `macos-15-intel` runner，并生成 `.app` + `.dmg`。构建入口：[macOS Actions](https://github.com/smallfishworld/audio_analyzer/actions/workflows/macos.yml)。CI 通过后，下载与芯片对应的 Artifact：`audio-analyzer-m1-macos-apple-silicon-arm64` 或 `audio-analyzer-m1-macos-intel-x64`。
+
+本机 macOS 构建：
+
+```bash
+npm install
+npm run prepare:icons
+bash scripts/generate-macos-icons.sh
+npm run tauri build -- --bundles app,dmg
+```
+
+**重要**：当前 DMG 为 ad-hoc 签名但**没有 Apple 公证**，Gatekeeper 可能拒绝普通双击，正式发行前需要 Developer ID 签名与 Notarization；CI 成功不等于已在用户 Mac 上验收。WAV/裸 PCM 不依赖 FFmpeg，其余压缩格式仍需开发机自己安装 FFmpeg，例如 `brew install ffmpeg`。Finder 启动时自动尝试 /opt/homebrew/bin、/usr/local/bin。音频仅首三秒预览，完整 M1 尚未验收。
