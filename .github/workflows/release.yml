@@ -1,0 +1,122 @@
+name: Publish v0.2.0-alpha.1 preview
+
+# This workflow only publishes after the two native macOS builds have PASSED.
+# It independently requires the Windows + Rust + 8-codec CI workflow for
+# the exact same commit to pass before it uploads any release assets.
+on:
+  workflow_run:
+    workflows: ["macOS desktop builds"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      contains(github.event.workflow_run.head_commit.message, '[release v0.2.0-alpha.1]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+      MAC_RUN_ID: ${{ github.event.workflow_run.id }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Checkout exactly the validated commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Verify release marker and absence of an earlier release
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show -s --format=%B "$TARGET_SHA" | grep -F '[release v0.2.0-alpha.1]'
+          if gh release view v0.2.0-alpha.1 --repo "$REPO" >/dev/null 2>&1; then
+            echo "::error::Release tag already exists; refusing to overwrite artifacts"
+            exit 1
+          fi
+
+      - name: Download validated native macOS DMGs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          gh run download "$MAC_RUN_ID" -R "$REPO" \
+            -n audio-analyzer-m1-self-contained-macos-apple-silicon-arm64 \
+            -D release-assets
+          gh run download "$MAC_RUN_ID" -R "$REPO" \
+            -n audio-analyzer-m1-self-contained-macos-intel-x64 \
+            -D release-assets
+
+      - name: Require successful Windows checks on the identical commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          WIN_RUN=""
+          for attempt in $(seq 1 90); do
+            RUN_ID="$(gh run list -R "$REPO" --workflow ci.yml --commit "$TARGET_SHA" \
+              --json databaseId --jq '.[0].databaseId // empty')"
+            if [[ -n "$RUN_ID" ]]; then
+              STATE="$(gh run view "$RUN_ID" -R "$REPO" \
+                --json status,conclusion --jq '.status + ":" + (.conclusion // "")')"
+              echo "Windows + Rust + codec tests: $STATE (run $RUN_ID)"
+              case "$STATE" in
+                completed:success) WIN_RUN="$RUN_ID"; break;;
+                completed:*) echo "::error::Windows CI failed: $STATE"; exit 1;;
+              esac
+            fi
+            sleep 15
+          done
+          if [[ -z "$WIN_RUN" ]]; then
+            echo "::error::Windows CI missing or not completed in time"; exit 1
+          fi
+          gh run download "$WIN_RUN" -R "$REPO" \
+            -n audio-analyzer-m1-self-contained-windows \
+            -D release-assets
+
+      - name: Check release assets and create checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          dmgs=(release-assets/*.dmg)
+          windows=(release-assets/*.exe)
+          [[ "${#dmgs[@]}" -eq 2 ]] || { echo "::error::Expected two DMG files"; exit 1; }
+          [[ "${#windows[@]}" -eq 1 ]] || { echo "::error::Expected one Windows installer"; exit 1; }
+          for file in "${dmgs[@]}" "${windows[@]}"; do
+            test -s "$file"
+            echo "Validated asset: $file"
+            file "$file"
+          done
+          (cd release-assets && sha256sum -- *.dmg *.exe > SHA256SUMS.txt)
+          cat release-assets/SHA256SUMS.txt
+
+      - name: Create GitHub Pre-release with installers from the verified commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create v0.2.0-alpha.1 -R "$REPO" \
+            --target "$TARGET_SHA" \
+            --title "Audio Analyzer v0.2.0-alpha.1 — First Preview" \
+            --prerelease \
+            --notes-file docs/release-v0.2.0-alpha.1.md \
+            release-assets/*.dmg release-assets/*.exe release-assets/SHA256SUMS.txt
+
+      - name: Confirm published release and assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view v0.2.0-alpha.1 -R "$REPO" \
+            --json url,isPrerelease,assets \
+            --jq '{url: .url, prerelease: .isPrerelease, assets: [.assets[].name]}'
+          ASSETS="$(gh release view v0.2.0-alpha.1 -R "$REPO" --json assets --jq '.assets | length')"
+          [[ "$ASSETS" -eq 4 ]]

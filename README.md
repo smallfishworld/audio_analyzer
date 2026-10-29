@@ -1,83 +1,60 @@
 # Audio Analyzer
 
-免费开源、离线优先的专业音频文件分析仪，支持 **Windows x64 / macOS Apple Silicon 与 Intel**（macOS 目前为未公证的开发预览版），基于 Tauri 2、React、Rust、realfft、uPlot。
+**免费、开源、离线优先的音频文件频谱分析桌面软件**。支持 **Windows x64、macOS Apple Silicon、macOS Intel**。使用 Tauri 2 + React + Rust + FFmpeg。
 
-当前进度：**M1 多格式导入开发中**。已实现 Rust FFmpeg/ffprobe 解码适配器和元数据分析，支持系统安装了 ffmpeg 与 ffprobe 的开发环境。**Windows 安装包仍不内置 FFmpeg**，因此不能声称压缩格式已做到开箱即用。
+> **v0.2.0-alpha.1 — 首个公开预览版。** 当前仍是 M0/M1 的早期功能版本，不是完整的专业测量套件；具体下载与限制见 [Release 说明](docs/release-v0.2.0-alpha.1.md)。
 
-## 已实现的 M0 代码
-- React 专业分析工作台：深色仪表界面、波形、FFT 频谱、峰值/RMS 数值卡片。
-- Rust 合成信号演示（1 kHz + 7 kHz）及精确 dBFS 计算。
-- WAV 与裸 PCM 文件前三秒预览。裸 PCM 可输入采样率、声道、整数/浮点格式、大小端、偏移字节。
-- 首声道读取、4096 点 Hann 窗 FFT、频谱峰值、最值波形聚合。
-- Rust 单测：静音、-3.0103 dBFS 正弦 RMS、-6.0206 dBFS 单频 FFT。
-- GitHub Actions 前端、Rust 内核及 Windows 桌面检查（以实际 CI 结果为准）。
+## 下载
 
-**限制**：前三秒预览统计不是整个文件统计；裸 PCM 已支持 interleaved/planar，但目前仅分析第一声道。压缩格式使用 FFmpeg 解码，只有 ffmpeg 和 ffprobe 可被应用进程找到时才生效；STFT、可配置 FFT、码率导出属于后续阶段。
+首次预览版发布成功后，从 [GitHub Releases](https://github.com/smallfishworld/audio_analyzer/releases) 下载：
 
-## 开发运行
+| 设备 | 安装文件 | 注意 |
+|---|---|---|
+| MacBook Air/Pro，Apple Silicon M 系列 | `aarch64` / `arm64` 的 DMG | 未公证的预览版 |
+| Intel Mac | `x64` / `x86_64` 的 DMG | 未公证的预览版 |
+| Windows 10/11 x64 | NSIS `.exe` | 未签名的预览版 |
 
-需要 Node.js 22、Rust stable、Tauri 2 对应平台构建依赖（Windows：WebView2/Visual C++ Build Tools；macOS：Xcode Command Line Tools）。
+发布版内置 **FFmpeg 9.0.2 + ffprobe**（独立 sidecar），**无需额外安装 FFmpeg/Homebrew**；匹配源码、LGPL 授权文件、构建配置及校验值与程序一起分发。详细说明见 [FFmpeg 集成与许可](docs/bundled-ffmpeg.md)。
 
-~~~sh
-npm install
-npm run tauri dev
-cargo test --manifest-path crates/audio-core/Cargo.toml
-~~~
+## 已实现的分析能力
 
-浏览器运行 npm run dev 只能查看页面布局，调用 Rust 分析命令需要桌面 Tauri 环境。
+- 直接导入 WAV 和无头 PCM；PCM 可以设置采样率、声道、u8/s8/s16/s24/s32/f32/f64、大小端、数据偏移与 interleaved/planar 布局。
+- 内置 FFmpeg 对 MP3、FLAC、AAC/M4A、AIFF、Ogg Vorbis、Opus 等文件进行探测与解码（具体 codec 支持由内置构建和兼容矩阵确定）。
+- 通道切换（CH1～CHn），源文件只读属性：编码、采样率、声道数、码率（如能取得）、时长。
+- 显示波形、4096 点 Hann FFT 幅度谱、峰值 dBFS、RMS dBFS、主频和 Nyquist 频率。
+- 解码超时保护、有限解码输出、基本错误提示；音频分析由 Rust 后台工作线程执行。
 
-## 文档
+## 重要限制
 
-- [产品需求](spec.md)
-- [技术方案](tech.md)
-- [M0 验收记录](docs/m0-validation.md)
-- [macOS ARM64 / Intel 构建及验收](docs/macos-validation.md)
+- **只分析所选声道最前面的 3 秒 / 最多 576000 帧**。大文件虽可预览，但不是整文件测量或整文件波形。
+- FFT 点数和窗函数尚不可调整，频谱只是幅度谱而非 PSD；时频谱、导出编码参数及选区分析仍未实现。
+- 当前没有专业 dB SPL（声压级）校准，不做专用多 MIC 一致性测试。
+- macOS DMG 使用 ad-hoc 签名，**未 Apple 公证**；Windows 安装程序未签名；实际用户设备的 GUI 与离线安装还需进一步验收。
+- 自动化验证和 GitHub 构建不等同于完整真实设备验收。
 
-不提供专用多 MIC 一致性及自动良率判定功能。
+## 参与开发
 
-## Windows M0 安装包
-
-GitHub Actions 的 M0 validation 工作流包含 Windows NSIS 构建和上传步骤；**请仅在该工作流完成且成功后下载 audio-analyzer-m0-windows artifact**。安装包未签名，且不含 FFmpeg 解码能力，仅提供 WAV/裸 PCM 演示与基础分析。
-
-
-## M1 多格式解码（进行中）
-
-目前 Rust 解码适配器可对 WAV、AIFF、FLAC、MP3、AAC ADTS、M4A、OGG Vorbis、Opus、ALAC 等非 DRM 格式进行 ffprobe 探测与 FFmpeg 浮点样本解码（具体格式依赖安装的 FFmpeg 构建，按 CI 验证矩阵确认）。对来源较长的文件只分析首 3 秒 / 最多 576000 采样帧，报告真实文件编码、采样率、码率（可获得时）、声道数和时长，并明确标识 preview。
-
-在开发机安装 FFmpeg/ffprobe 并加入 PATH，运行应用后即可打开上述文件。无法找到时显示具体错误；Windows 安装包尚未内置经过法律审核的 sidecar。
-
-M1 格式回归测试：
-
-~~~sh
-node scripts/generate-m1-fixtures.mjs
-AUDIO_ANALYZER_RUN_CODEC_TESTS=1 cargo test --manifest-path crates/audio-core/Cargo.toml --test multiformat
-~~~
-
-项目不会自动联网下载 FFmpeg，正式独立分发需先通过许可证审核与 Windows 打包测试。详见 [M1 验证记录](docs/m1-validation.md)。
-
-## M1 Preview 版本说明
-
-版本：0.2.0-alpha.1。CI 安装包 Artifact 名为 audio-analyzer-m1-preview-windows。此预览包**不附带 FFmpeg 二进制**；要打开压缩音频，需要运行机 PATH 中有 ffmpeg 与 ffprobe。未签名，不是正式发布。
-
-## M0/M1 Review 修复分支
-
-本次补充的能力：对 WAV、RAW PCM（interleaved/planar）及 FFmpeg 格式选择 CH1…CHn、超时与受限 FFmpeg 解码、避免旧异步结果覆盖当前界面；增加第二声道/超时测试。请以新 PR 的 CI 结果判断能否正式使用。
-
-[完整审查与剩余任务](docs/code-review-m0-m1.md)。
-
-注意：**只能查看所选通道最前面 3 秒/最多 576000 帧的预览**，尚非全文件分析；这与多 MIC 一致性自动判定无关。M1 Windows 安装包尚未内置 FFmpeg。
-
-## macOS 开发版（Apple Silicon / Intel）
-
-macOS 两套原生构建分别采用 GitHub `macos-15` 与 `macos-15-intel` runner，并生成 `.app` + `.dmg`。构建入口：[macOS Actions](https://github.com/smallfishworld/audio_analyzer/actions/workflows/macos.yml)。CI 通过后，下载与芯片对应的 Artifact：`audio-analyzer-m1-macos-apple-silicon-arm64` 或 `audio-analyzer-m1-macos-intel-x64`。
-
-本机 macOS 构建：
+需要 Node.js 22、Rust stable 和对应平台的 Tauri 2 构建依赖。
 
 ```bash
 npm install
-npm run prepare:icons
-bash scripts/generate-macos-icons.sh
-npm run tauri build -- --bundles app,dmg
+npm run tauri dev
+cargo test --manifest-path crates/audio-core/Cargo.toml
 ```
 
-**重要**：当前 DMG 为 ad-hoc 签名但**没有 Apple 公证**，Gatekeeper 可能拒绝普通双击，正式发行前需要 Developer ID 签名与 Notarization；CI 成功不等于已在用户 Mac 上验收。WAV/裸 PCM 不依赖 FFmpeg，其余压缩格式仍需开发机自己安装 FFmpeg，例如 `brew install ffmpeg`。Finder 启动时自动尝试 /opt/homebrew/bin、/usr/local/bin。音频仅首三秒预览，完整 M1 尚未验收。
+开发模式可以使用系统安装的 FFmpeg；正式 release 构建使用自己打包的审核版，不静默退回系统 FFmpeg。Windows 构建脚本与 macOS 双架构工作流会从官方固定 SHA256 源码构建 sidecar。
+
+## 文档
+
+- [产品需求 spec.md](spec.md)
+- [技术方案 tech.md](tech.md)
+- [FFmpeg 随包与许可证](docs/bundled-ffmpeg.md)
+- [M0/M1 Review 与待办](docs/code-review-m0-m1.md)
+- [M1 验证记录](docs/m1-validation.md)
+- [macOS 兼容与打包验证](docs/macos-validation.md)
+- [首版 Release Notes](docs/release-v0.2.0-alpha.1.md)
+- [剩余工程任务](https://github.com/smallfishworld/audio_analyzer/issues/4)
+
+## 授权
+
+Audio Analyzer 自有源码基于 [MIT License](LICENSE) 发布。FFmpeg 和其余第三方依赖遵守各自的许可证；FFmpeg 是 LGPL-only 单独可执行程序，并随包提供对应源代码、许可文本和构建记录。具体部署还需遵守适用地区的编解码专利及软件签名要求。

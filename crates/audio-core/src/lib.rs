@@ -114,7 +114,7 @@ pub fn wav_channel(path:&Path,channel:usize)->Result<AnalysisSnapshot,String>{
             }
         }
     }
-    let mut snapshot = analyze(&path.file_name().unwrap_or_default().to_string_lossy(),"WAV first-channel preview",spec.sample_rate,spec.channels,&samples,available>frames)?;
+    let mut snapshot = analyze(&path.file_name().unwrap_or_default().to_string_lossy(),&format!("WAV channel {} preview",channel+1),spec.sample_rate,spec.channels,&samples,available>frames)?;
     snapshot.metadata = Some(AudioMetadata {
         container:"wav".into(),codec:format!("pcm_{}bit",spec.bits_per_sample),
         sample_rate_hz:spec.sample_rate,channels:spec.channels,
@@ -177,7 +177,7 @@ pub fn pcm_channel(path:&Path,spec:&RawSpec,channel:usize)->Result<AnalysisSnaps
         samples.push(val);
     }
     let mut snapshot=analyze(&path.file_name().unwrap_or_default().to_string_lossy(),
-        &format!("Raw {} PCM first channel",spec.layout),spec.sample_rate_hz,spec.channels,&samples,available>count)?;
+        &format!("Raw {} PCM channel {}",spec.layout,channel+1),spec.sample_rate_hz,spec.channels,&samples,available>count)?;
     snapshot.metadata = Some(AudioMetadata {
         container:"raw".into(),codec:spec.sample_format.clone(),
         sample_rate_hz:spec.sample_rate_hz,channels:spec.channels,
@@ -250,6 +250,48 @@ use super::*;
     assert!(out.waveform.len() <= 1_200);
     assert_eq!(out.rms_dbfs,None);
     std::fs::remove_file(&path).unwrap();
+}
+#[test] fn raw_s24_endian_sign_extension() {
+    let path=std::env::temp_dir().join(format!("aa_release_s24_{}.pcm",std::process::id()));
+    for (endianness, bytes) in [
+        ("little", [0x00_u8,0x00,0x80]),
+        ("big", [0x80_u8,0x00,0x00])
+    ] {
+        std::fs::write(&path,bytes).unwrap();
+        let raw=RawSpec{
+            sample_rate_hz:192000,channels:1,sample_format:"s24".into(),
+            endianness:endianness.into(),byte_offset:0,layout:"interleaved".into()
+        };
+        let result=pcm_channel(&path,&raw,0).unwrap();
+        assert_eq!(result.rms_dbfs,Some(0.0),"wrong {endianness} sign extension");
+        assert_eq!(result.peak_dbfs,Some(0.0));
+    }
+    std::fs::remove_file(path).unwrap();
+}
+#[test] fn raw_f32_uses_actual_float_range() {
+    let path=std::env::temp_dir().join(format!("aa_release_float_{}.pcm",std::process::id()));
+    let mut bytes=Vec::new();
+    bytes.extend_from_slice(&0.5_f32.to_le_bytes());
+    bytes.extend_from_slice(&(-0.5_f32).to_le_bytes());
+    std::fs::write(&path,bytes).unwrap();
+    let raw=RawSpec{
+        sample_rate_hz:48000,channels:1,sample_format:"f32".into(),
+        endianness:"little".into(),byte_offset:0,layout:"interleaved".into()
+    };
+    let result=pcm(&path,&raw).unwrap();
+    assert!((result.peak_dbfs.unwrap()+6.020599913).abs()<0.000001);
+    assert!((result.rms_dbfs.unwrap()+6.020599913).abs()<0.000001);
+    std::fs::remove_file(path).unwrap();
+}
+#[test] fn high_frequency_47khz_is_resolved_at_192khz() {
+    let rate=192000u32;
+    let tone=47000.0;
+    let signal:Vec<_>=(0..FFT_N).map(|i|
+        0.6*(2.0*std::f64::consts::PI*tone*i as f64/rate as f64).sin()
+    ).collect();
+    let result=analyze("47k","test",rate,1,&signal,false).unwrap();
+    assert_eq!(result.spectrum.last().unwrap().frequency_hz,rate as f64/2.0);
+    assert!((result.dominant_frequency_hz.unwrap()-tone).abs()<=rate as f64/FFT_N as f64);
 }
 #[test] fn zero_is_silent(){let v=analyze("silence","test",48000,1,&vec![0.0;4096],false).unwrap();assert_eq!(v.rms_dbfs,None);assert_eq!(v.peak_dbfs,None);}
 #[test] fn sine_rms_minus_three_db(){let s:Vec<_>=(0..48000).map(|i|(2.0*std::f64::consts::PI*1000.0*i as f64/48000.0).sin()).collect();let v=analyze("sine","test",48000,1,&s,false).unwrap();assert!((v.rms_dbfs.unwrap()+3.01029995664).abs()<0.001);}

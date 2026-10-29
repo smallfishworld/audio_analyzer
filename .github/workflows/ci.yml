@@ -35,12 +35,51 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm run build
       - run: npm run prepare:icons
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            make tar xz curl diffutils
+            mingw-w64-ucrt-x86_64-gcc
+      - name: Build bundled LGPL FFmpeg and matching source
+        shell: msys2 {0}
+        run: |
+          export RUNNER_TEMP="$PWD/.ffmpeg-work"
+          bash scripts/build-ffmpeg-sidecar.sh x86_64-pc-windows-msvc
+          test -s src-tauri/binaries/ffmpeg-x86_64-pc-windows-msvc.exe
+          test -s src-tauri/binaries/ffprobe-x86_64-pc-windows-msvc.exe
+      - name: Verify staged FFmpeg executables on Windows
+        shell: pwsh
+        run: |
+          & "src-tauri/binaries/ffmpeg-x86_64-pc-windows-msvc.exe" -version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & "src-tauri/binaries/ffprobe-x86_64-pc-windows-msvc.exe" -version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: Smoke-test bundled FFmpeg codecs
+        shell: pwsh
+        run: |
+          $env:AUDIO_ANALYZER_FFMPEG = (Resolve-Path "src-tauri/binaries/ffmpeg-x86_64-pc-windows-msvc.exe").Path
+          $env:AUDIO_ANALYZER_FFPROBE = (Resolve-Path "src-tauri/binaries/ffprobe-x86_64-pc-windows-msvc.exe").Path
+          node scripts/verify-bundled-ffmpeg.mjs
       - run: cargo check --manifest-path src-tauri/Cargo.toml
-      - name: Build unsigned Windows M1 preview installer
+      - name: Build unsigned Windows installer with bundled codecs
         run: npm run tauri build -- --bundles nsis
+      - name: Inspect NSIS installer for embedded FFmpeg and license source
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
+          if (-not $installer) { throw "NSIS installer missing" }
+          $contents = (& 7z l $installer.FullName | Out-String)
+          if ($LASTEXITCODE -ne 0) { throw "Cannot inspect NSIS installer" }
+          foreach ($name in @("ffmpeg.exe", "ffprobe.exe", "ffmpeg-9.0.2.tar.xz", "COPYING.LGPLv2.1")) {
+            if (-not $contents.Contains($name)) { throw "Missing $name in NSIS installer" }
+          }
+          Write-Host "NSIS contains FFmpeg, ffprobe, exact sources and LGPL license"
+
       - uses: actions/upload-artifact@v4
         with:
-          name: audio-analyzer-m1-preview-windows
+          name: audio-analyzer-m1-self-contained-windows
           path: src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
 

@@ -32,6 +32,13 @@
     ],
     "targets": [
       "nsis"
-    ]
+    ],
+    "externalBin": [
+      "binaries/ffmpeg",
+      "binaries/ffprobe"
+    ],
+    "resources": {
+      "third-party/ffmpeg/*": "licenses/ffmpeg/"
+    }
   }
 }
