@@ -13,3 +13,7 @@ src-tauri/icons/
 
 # Generated codec test fixtures
 tests/fixtures/generated/
+
+# Reproducibly built FFmpeg sidecars and matching source staged by CI
+src-tauri/binaries/*
+src-tauri/third-party/ffmpeg/
