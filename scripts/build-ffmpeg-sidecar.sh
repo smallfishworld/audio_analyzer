@@ -50,7 +50,8 @@ for name in ffmpeg ffprobe; do
   bin="$name${SUFFIX}"
   test -s "$bin"
   cp "$bin" "$ROOT/src-tauri/binaries/$name-$TARGET${SUFFIX}"
-  "$ROOT/src-tauri/binaries/$name-$TARGET${SUFFIX}" -version | head -n 2
+  "$ROOT/src-tauri/binaries/$name-$TARGET${SUFFIX}" -version > "$WORK/$name-version.txt"
+  sed -n '1,2p' "$WORK/$name-version.txt"
   "$ROOT/src-tauri/binaries/$name-$TARGET${SUFFIX}" -buildconf \
     | tee "$WORK/$name-buildconf.txt"
   if "$ROOT/src-tauri/binaries/$name-$TARGET${SUFFIX}" -buildconf \
