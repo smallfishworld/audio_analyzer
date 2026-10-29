@@ -7,3 +7,6 @@ dist/
 *.wav
 *.pcm
 *.raw
+
+# Generated reproducibly by npm run prepare:icons
+src-tauri/icons/
