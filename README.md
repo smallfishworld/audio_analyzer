@@ -2,7 +2,7 @@
 
 免费开源、离线优先的专业音频文件分析仪，支持 **Windows x64 / macOS Apple Silicon 与 Intel**（macOS 目前为未公证的开发预览版），基于 Tauri 2、React、Rust、realfft、uPlot。
 
-当前进度：**M1 多格式导入开发中**。已实现 Rust FFmpeg/ffprobe 解码适配器和元数据分析，支持系统安装了 ffmpeg 与 ffprobe 的开发环境。**Windows 安装包仍不内置 FFmpeg**，因此不能声称压缩格式已做到开箱即用。
+当前进度：**M1 多格式导入开发中**。已实现 Rust FFmpeg/ffprobe 解码适配器与元数据分析。正在通过 CI 从官方源码编译并随包集成 LGPL FFmpeg（是否成功须以 GitHub Actions 结果为准）；完整文件分析尚未实现。
 
 ## 已实现的 M0 代码
 - React 专业分析工作台：深色仪表界面、波形、FFT 频谱、峰值/RMS 数值卡片。
@@ -12,7 +12,7 @@
 - Rust 单测：静音、-3.0103 dBFS 正弦 RMS、-6.0206 dBFS 单频 FFT。
 - GitHub Actions 前端、Rust 内核及 Windows 桌面检查（以实际 CI 结果为准）。
 
-**限制**：前三秒预览统计不是整个文件统计；裸 PCM 已支持 interleaved/planar，但目前仅分析第一声道。压缩格式使用 FFmpeg 解码，只有 ffmpeg 和 ffprobe 可被应用进程找到时才生效；STFT、可配置 FFT、码率导出属于后续阶段。
+**限制**：前三秒预览统计不是整个文件统计；裸 PCM 已支持 interleaved/planar，但目前仅分析第一声道。压缩格式由 FFmpeg 解码；带 sidecar 的新安装包目标是无需用户自行安装 FFmpeg（旧版预览包仍需自行安装）；STFT、可配置 FFT、码率导出属于后续阶段。
 
 ## 开发运行
 
@@ -57,7 +57,7 @@ AUDIO_ANALYZER_RUN_CODEC_TESTS=1 cargo test --manifest-path crates/audio-core/Ca
 
 ## M1 Preview 版本说明
 
-版本：0.2.0-alpha.1。CI 安装包 Artifact 名为 audio-analyzer-m1-preview-windows。此预览包**不附带 FFmpeg 二进制**；要打开压缩音频，需要运行机 PATH 中有 ffmpeg 与 ffprobe。未签名，不是正式发布。
+版本：0.2.0-alpha.1。CI 安装包 Artifact 名为 audio-analyzer-m1-preview-windows。此前的 v0.2.0-alpha.1 预览包不附带 FFmpeg；新的 self-contained 构建将内置 FFmpeg/ffprobe 和匹配源码/许可材料。是否已完成须以对应 CI 的构建产物为准。安装包未签名，不是正式发布。
 
 ## M0/M1 Review 修复分支
 
@@ -65,7 +65,7 @@ AUDIO_ANALYZER_RUN_CODEC_TESTS=1 cargo test --manifest-path crates/audio-core/Ca
 
 [完整审查与剩余任务](docs/code-review-m0-m1.md)。
 
-注意：**只能查看所选通道最前面 3 秒/最多 576000 帧的预览**，尚非全文件分析；这与多 MIC 一致性自动判定无关。M1 Windows 安装包尚未内置 FFmpeg。
+注意：**只能查看所选通道最前面 3 秒/最多 576000 帧的预览**，尚非全文件分析；这与多 MIC 一致性自动判定无关。旧 M1 Windows 安装包尚未内置 FFmpeg；新的 self-contained 构建正在验证。
 
 ## macOS 开发版（Apple Silicon / Intel）
 
@@ -81,3 +81,13 @@ npm run tauri build -- --bundles app,dmg
 ```
 
 **重要**：当前 DMG 为 ad-hoc 签名但**没有 Apple 公证**，Gatekeeper 可能拒绝普通双击，正式发行前需要 Developer ID 签名与 Notarization；CI 成功不等于已在用户 Mac 上验收。WAV/裸 PCM 不依赖 FFmpeg，其余压缩格式仍需开发机自己安装 FFmpeg，例如 `brew install ffmpeg`。Finder 启动时自动尝试 /opt/homebrew/bin、/usr/local/bin。音频仅首三秒预览，完整 M1 尚未验收。
+
+## FFmpeg 离线集成（self-contained）
+
+新的打包流程使用 FFmpeg **9.0.2** 官方源码，SHA-256 校验后编译不启用 GPL/nonfree 的版本，把 `ffmpeg`、`ffprobe` 及对应源码/许可证一起装入 NSIS 和两个 macOS DMG。release 模式优先且仅使用安装包内的解码器，不依赖用户的 Homebrew / PATH。
+
+- [许可证、构建复现与验收要求](docs/bundled-ffmpeg.md)
+- [macOS CI 双架构工作流](.github/workflows/macos.yml)
+- [Windows CI 工作流](.github/workflows/ci.yml)
+
+CI 安装包 Artifact 以 `audio-analyzer-m1-self-contained-*` 命名；只有对应工作流全部成功并检验包内 sidecar 后才算可用。正式 macOS 对外分发还需要 Apple Developer ID 公证，完整多格式音频功能与全文件分析还在 M1 后续开发中。
