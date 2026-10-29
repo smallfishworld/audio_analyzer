@@ -116,7 +116,7 @@ pub fn decode_preview(path: &Path) -> Result<AnalysisSnapshot, String> {
 pub fn decode_preview_channel(path: &Path, channel: usize) -> Result<AnalysisSnapshot, String> {
     let metadata = probe(path)?;
     if channel>=metadata.channels as usize {return Err("Selected audio channel is out of range".into());}
-    // No implicit resampling or channel mix: first channel copied via explicit pan mapping.
+    // No implicit resampling or channel mix: preserve the explicitly selected channel.
     let max_frames = (metadata.sample_rate_hz as usize).saturating_mul(3).min(576_000);
     let seconds = max_frames as f64 / metadata.sample_rate_hz as f64;
     let mut cmd = Command::new(bin("ffmpeg"));
@@ -147,7 +147,7 @@ pub fn decode_preview_channel(path: &Path, channel: usize) -> Result<AnalysisSna
         .unwrap_or_else(|| "audio".into());
     let limited = metadata.duration_seconds.map(|v| v > seconds + 0.005).unwrap_or(true);
     let mut snapshot = analyze(&filename,
-        &format!("{} · {} · first channel", metadata.container, metadata.codec),
+        &format!("{} · {} · channel {}", metadata.container, metadata.codec, channel + 1),
         metadata.sample_rate_hz, metadata.channels, &samples, limited)?;
     snapshot.metadata = Some(metadata);
     snapshot.selected_channel = channel;
