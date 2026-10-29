@@ -17,7 +17,7 @@
 
 | 分层 | 选型 | 决策 | 作用 |
 |---|---|---|---|
-| 桌面应用 | Tauri 2 | 采用 | Windows 优先，macOS/Linux 后续共用代码 |
+| 桌面应用 | Tauri 2 | 采用 | Windows 与 macOS ARM64/Intel 双平台；Linux 后续 |
 | 前端框架 | React + TypeScript + Vite | 采用 | 工作台、多面板和高交互 UI |
 | UI 样式/控件 | Tailwind CSS + Radix UI primitives + Lucide icons | 采用 | 精致、可定制、无障碍，避免臃肿设计框架 |
 | UI 状态 | Zustand | 采用 | 文件、选区、视图参数与任务状态 |
@@ -32,7 +32,7 @@
 | 播放 | P0 优先验证 Rust/系统音频输出后端 | 待 M0 验证 | 试听不进入专业分析链路 |
 | 设置/缓存 | JSON 配置 + 本地二进制分层缓存 | 采用 | 不引入数据库做首版前提 |
 | 测试 | cargo test、Vitest、Playwright、平台端到端测试 | 采用 | 对格式、数值、UI 和安装包独立验收 |
-| CI/CD | GitHub Actions + 平台打包 | 采用 | Windows 优先，逐步增加 macOS/Linux |
+| CI/CD | GitHub Actions + 平台打包 | 采用 | Windows + macOS ARM64/Intel CI；Linux 后续 |
 
 **重要原则**：FFmpeg 专门负责媒体容器/编解码，Rust DSP 专门负责测量；前端不参与 dBFS、FFT 归一化等核心计算。浏览器 Web Audio API 不作为测量数据源。
 
@@ -382,7 +382,7 @@
 
 - Rust 使用 rust-toolchain.toml 固定工具链，Cargo.lock 提交；前端使用 pnpm-lock.yaml 固定依赖树，锁定 Node LTS 基线。
 - Rust fmt/clippy/test + frontend lint/typecheck/unit tests + format/codecs regression 作为 PR 必跑检查。
-- Windows 安装包是首个 Release 目标；macOS/Linux 在 P1 发布前设置真实测试机器，不能“CI 编译通过”就宣称兼容。
+- Windows NSIS 与 macOS ARM64/Intel DMG 都是 P0 目标；macOS 必须独立测试 WKWebView/Apple Silicon 和 Intel，不能仅凭 CI 编译声称兼容。Linux 仍在 P1。
 - 音频测试向量由脚本生成，固定生成器版本和 SHA-256；少量人工听音文件不能替代标准数值测试。
 - 可选建立 cargo-audit、npm audit、依赖 License/SBOM（Software Bill of Materials，软件物料清单）扫描及 FFmpeg CVE 跟踪；重大漏洞需支持独立更新 sidecar。
 - Github Releases 需要：安装包、校验和、版本说明、格式支持矩阵、第三方许可说明。
@@ -425,16 +425,16 @@
 - 频谱 uPlot、选区/光标联动与 CSV 导出。
 - 显式改变分析采样率、rubato 重采样及数值测试。
 
-### M3 — 时频谱、可配置导出和 Windows 稳定版
+### M3 — 时频谱、可配置导出和 Windows/macOS 稳定版
 
 - STFT WebGL2 瓦片与 Canvas2D fallback、图像导出。
 - WAV/FLAC/MP3/AAC/PCM 导出；设置采样率/码率/样本精度/声道；重导入结果核验。
-- 1 GB 文件性能验证、安装包离线测试、许可证清单与正式 Windows Release。
+- 1 GB 文件性能验证、Windows/macOS 安装包离线测试、许可证清单、macOS Developer ID 签名/公证与正式双平台 Release。
 
 ### M4 — 高级分析与更多平台
 
 - LUFS、True Peak、THD+N、频谱叠加、更多容器/编码格式、批处理。
-- macOS Apple Silicon / Linux 打包、真实机器兼容性与性能优化。
+- Linux 打包、Windows/macOS 真机兼容性进一步完善与性能优化。
 
 ## 13. 架构决策记录（ADR，Architecture Decision Record）
 
@@ -469,3 +469,13 @@
 ---
 
 **本技术方案已选定主要方向，但尚未编码、打包或通过性能测试。M0 需优先消除 FFmpeg 许可/编码器、Tauri 离线安装和大文件数据传输三项发布阻塞风险，然后进入工程实施。**
+
+
+## 附录 A：macOS P0 选型修订（2026-10-29）
+
+- macOS 不再延期到 M4：M0/M1 即建立 ARM64（Apple Silicon）与 x86_64（Intel）两种 native .app/.dmg 构建。
+- Tauri 2 自动合并 `src-tauri/tauri.macos.conf.json`，将 Windows 的 NSIS 目标替换为 `app,dmg`，图标使用 Apple .icns。
+- CI 使用 GitHub `macos-15` 与 `macos-15-intel` runner；采用 Apple `iconutil`、`codesign`、`hdiutil` 校验，而不是跨系统伪造 macOS 安装包。
+- 预览版设置 ad-hoc 签名（`signingIdentity: "-"`），正式发行前必须接入 Apple Developer ID 签名/Notarization；正式发行不可将 ad-hoc 冒充公证。
+- Finder 不继承常见 shell PATH，Rust 在 macOS 按 /opt/homebrew/bin 和 /usr/local/bin 等常用位置寻找用户自己安装的 FFmpeg；开发内测未随包附带 FFmpeg。
+- 详细 CI、分发和平台验收见 [macOS 验证文档](./docs/macos-validation.md)。
