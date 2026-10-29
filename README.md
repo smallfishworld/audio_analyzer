@@ -2,7 +2,7 @@
 
 免费开源、离线优先的专业音频文件分析仪。基于 Tauri 2、React、Rust、realfft、uPlot。
 
-当前进度：**M0 工程原型，尚未完成 Windows 正式安装包及 FFmpeg sidecar 分发验证**。
+当前进度：**M0 工程原型**。CI 尝试构建未签名 Windows NSIS 安装包；仅在构建工作流成功且产物存在时视为可下载原型。FFmpeg sidecar 尚未合规分发。
 
 ## 已实现的 M0 代码
 - React 专业分析工作台：深色仪表界面、波形、FFT 频谱、峰值/RMS 数值卡片。
@@ -33,3 +33,7 @@ cargo test --manifest-path crates/audio-core/Cargo.toml
 - [M0 验收记录](docs/m0-validation.md)
 
 不提供专用多 MIC 一致性及自动良率判定功能。
+
+## Windows M0 安装包
+
+GitHub Actions 的 M0 validation 工作流包含 Windows NSIS 构建和上传步骤；**请仅在该工作流完成且成功后下载 audio-analyzer-m0-windows artifact**。安装包未签名，且不含 FFmpeg 解码能力，仅提供 WAV/裸 PCM 演示与基础分析。

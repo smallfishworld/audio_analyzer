@@ -4,7 +4,12 @@ use audio_core::{RawSpec,AnalysisSnapshot};
 #[tauri::command]
 fn analyze_demo()->AnalysisSnapshot{audio_core::demo()}
 #[tauri::command]
-fn analyze_file(path:String,raw_spec:Option<RawSpec>)->Result<AnalysisSnapshot,String>{
+async fn analyze_file(path:String,raw_spec:Option<RawSpec>)->Result<AnalysisSnapshot,String>{
+    // Keep parsing/FFT off the webview/main command executor.
+    tauri::async_runtime::spawn_blocking(move || analyze_file_blocking(path,raw_spec))
+        .await.map_err(|e|format!("Audio task failed: {e}"))?
+}
+fn analyze_file_blocking(path:String,raw_spec:Option<RawSpec>)->Result<AnalysisSnapshot,String>{
     let p=Path::new(&path);
     if !p.is_file(){return Err("File does not exist".into());}
     if let Some(spec)=raw_spec{return audio_core::pcm(p,&spec);}

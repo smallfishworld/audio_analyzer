@@ -12,7 +12,7 @@ function db(n?: number | null) { return n == null ? "−∞" : n.toFixed(2); }
 function Chart({ title, kind, data }: { title: string; kind: "wave" | "fft"; data: Snapshot | null }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!ref.current || !data) return;
+    if (!ref.current || !data || (kind === "fft" && data.spectrum.length < 2)) return;
     const wave = kind === "wave";
     const arr: uPlot.AlignedData = wave ?
       [data.waveform.map(p => p.timeSec), data.waveform.map(p => p.min), data.waveform.map(p => p.max)] :
@@ -37,7 +37,7 @@ function Chart({ title, kind, data }: { title: string; kind: "wave" | "fft"; dat
     resize.observe(div);
     return () => { resize.disconnect(); plot.destroy(); };
   }, [data, kind]);
-  return <section className="chart-card"><div className="chart-header"><div><small>{kind === "wave" ? "01 / TIME DOMAIN" : "02 / FREQUENCY DOMAIN"}</small><h2>{title}</h2></div><span className="chip">{kind === "wave" ? "CHANNEL 1" : "HANN · 4096"}</span></div><div className="plot" ref={ref}/></section>;
+  return <section className="chart-card"><div className="chart-header"><div><small>{kind === "wave" ? "01 / TIME DOMAIN" : "02 / FREQUENCY DOMAIN"}</small><h2>{title}</h2></div><span className="chip">{kind === "wave" ? "CHANNEL 1" : "HANN · 4096"}</span></div><div className="plot" ref={ref}/>{kind === "fft" && data && data.spectrum.length < 2 && <p className="plot-empty">At least 4096 samples are required for FFT preview.</p>}</section>;
 }
 export default function App() {
   const [data, setData] = useState<Snapshot | null>(null);
