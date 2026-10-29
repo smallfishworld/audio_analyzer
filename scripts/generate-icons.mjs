@@ -42,6 +42,8 @@ const p32=png(32),p128=png(128),p1024=png(1024);
 writeFileSync(new URL("32x32.png",dir),p32);
 writeFileSync(new URL("128x128.png",dir),p128);
 writeFileSync(new URL("1024x1024.png",dir),p1024);
+// Tauri generate_context! expects icons/icon.png on macOS during Rust compilation.
+writeFileSync(new URL("icon.png",dir),p1024);
 const ico=Buffer.alloc(22);ico.writeUInt16LE(1,2);ico.writeUInt16LE(1,4);ico[6]=32;ico[7]=32;ico.writeUInt16LE(1,10);ico.writeUInt16LE(32,12);ico.writeUInt32LE(p32.length,14);ico.writeUInt32LE(22,18);
 writeFileSync(new URL("icon.ico",dir),Buffer.concat([ico,p32]));
 console.log("Generated Audio Analyzer icons");
