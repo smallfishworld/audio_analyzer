@@ -1,4 +1,5 @@
-//! Bounded audio preview through a locally available FFmpeg/ffprobe pair.
+//! Bounded audio preview through an audited, packaged FFmpeg/ffprobe pair.
+//! Development builds may use a locally installed FFmpeg as a fallback.
 //! Never invokes a shell, accepts network URLs or silently changes the first channel.
 use crate::{analyze, validate, AnalysisSnapshot};
 use crate::process::run_bounded;
@@ -31,6 +32,15 @@ fn bin(name: &str) -> PathBuf {
             if bundled.is_file() { return bundled; }
         }
     }
+    // Production builds are self-contained: never silently use an arbitrary PATH
+    // binary if the packaged helper is missing. The caller gets a clear error.
+    #[cfg(not(debug_assertions))]
+    if let Ok(current) = std::env::current_exe() {
+        if let Some(parent) = current.parent() {
+            return parent.join(&executable);
+        }
+    }
+    // Local cargo/Tauri development can still use the user's FFmpeg installation.
     // macOS Finder-launched .app processes normally lack Homebrew paths in PATH.
     // Probe common local installations without changing the user's shell settings.
     #[cfg(target_os = "macos")]
@@ -48,7 +58,7 @@ pub fn availability() -> String {
         Ok(output) if output.status.success() =>
             String::from_utf8_lossy(&output.stdout).lines().next()
                 .unwrap_or("ffprobe available").chars().take(90).collect(),
-        _ => "FFmpeg unavailable: install ffmpeg/ffprobe to analyze compressed files".into()
+        _ => "FFmpeg unavailable: packaged decoder missing or cannot start".into()
     }
 }
 
