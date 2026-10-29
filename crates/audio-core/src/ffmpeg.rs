@@ -35,8 +35,9 @@ fn bin(name: &str) -> PathBuf {
 }
 
 pub fn availability() -> String {
-    let binary = bin("ffprobe");
-    match Command::new(binary).arg("-version").output() {
+    let mut cmd = Command::new(bin("ffprobe"));
+    cmd.arg("-version");
+    match run_bounded(&mut cmd, Duration::from_secs(3), 16*1024, 4*1024) {
         Ok(output) if output.status.success() =>
             String::from_utf8_lossy(&output.stdout).lines().next()
                 .unwrap_or("ffprobe available").chars().take(90).collect(),
