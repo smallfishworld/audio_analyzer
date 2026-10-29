@@ -57,3 +57,11 @@ AUDIO_ANALYZER_RUN_CODEC_TESTS=1 cargo test --manifest-path crates/audio-core/Ca
 ## M1 Preview 版本说明
 
 版本：0.2.0-alpha.1。CI 安装包 Artifact 名为 audio-analyzer-m1-preview-windows。此预览包**不附带 FFmpeg 二进制**；要打开压缩音频，需要运行机 PATH 中有 ffmpeg 与 ffprobe。未签名，不是正式发布。
+
+## M0/M1 Review 修复分支
+
+本次补充的能力：对 WAV、RAW PCM（interleaved/planar）及 FFmpeg 格式选择 CH1…CHn、超时与受限 FFmpeg 解码、避免旧异步结果覆盖当前界面；增加第二声道/超时测试。请以新 PR 的 CI 结果判断能否正式使用。
+
+[完整审查与剩余任务](docs/code-review-m0-m1.md)。
+
+注意：**只能查看所选通道最前面 3 秒/最多 576000 帧的预览**，尚非全文件分析；这与多 MIC 一致性自动判定无关。M1 Windows 安装包尚未内置 FFmpeg。
