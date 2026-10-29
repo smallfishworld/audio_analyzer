@@ -42,6 +42,12 @@ jobs:
           test -s src-tauri/icons/icon.icns
       - name: Build React UI
         run: npm run build
+      - name: Build bundled LGPL FFmpeg and matching source
+        run: |
+          bash scripts/build-ffmpeg-sidecar.sh "${{ matrix.target }}"
+          test -x "src-tauri/binaries/ffmpeg-${{ matrix.target }}"
+          test -x "src-tauri/binaries/ffprobe-${{ matrix.target }}"
+          src-tauri/binaries/ffmpeg-${{ matrix.target }} -version
       - name: Validate native Rust app
         run: cargo check --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }}
       - name: Build macOS application and DMG
@@ -56,6 +62,11 @@ jobs:
           [[ -d "$APP" ]] || { echo "App bundle missing"; exit 1; }
           [[ -s "$DMG" ]] || { echo "DMG missing"; exit 1; }
           codesign --verify --deep --strict --verbose=2 "$APP"
+          test -x "$APP/Contents/MacOS/ffmpeg"
+          test -x "$APP/Contents/MacOS/ffprobe"
+          "$APP/Contents/MacOS/ffmpeg" -version
+          "$APP/Contents/MacOS/ffprobe" -version
+          find "$APP/Contents/Resources" -name 'ffmpeg-9.0.2.tar.xz' -print -quit | grep -q ffmpeg
           hdiutil verify "$DMG"
           BINARY="$(find "$APP/Contents/MacOS" -maxdepth 1 -type f -perm -111 -print -quit)"
           test -n "$BINARY"
@@ -64,7 +75,7 @@ jobs:
           ls -lh "$DMG"
       - uses: actions/upload-artifact@v4
         with:
-          name: audio-analyzer-m1-macos-${{ matrix.label }}
+          name: audio-analyzer-m1-self-contained-macos-${{ matrix.label }}
           path: src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
           if-no-files-found: error
           retention-days: 14
