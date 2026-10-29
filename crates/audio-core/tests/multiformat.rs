@@ -1,4 +1,4 @@
-use audio_core::ffmpeg::{decode_preview, probe};
+use audio_core::ffmpeg::{decode_preview, decode_preview_channel, probe};
 use std::path::PathBuf;
 fn fixture(name: &str) -> PathBuf {
     let base = std::env::var("AUDIO_ANALYZER_FIXTURES")
@@ -40,6 +40,10 @@ fn all_m1_formats_probe_and_analyze() {
         let frequency = output.dominant_frequency_hz.unwrap();
         assert!((frequency - 1000.0).abs() < 20.0, "{file} peak frequency {frequency}");
         assert_eq!(output.metadata.as_ref().unwrap().codec, codec);
+        let second=decode_preview_channel(&path,1).unwrap_or_else(|e|panic!("{file} second channel: {e}"));
+        assert_eq!(second.selected_channel,1);
+        assert_eq!(second.channels,2);
+        assert!(decode_preview_channel(&path,2).is_err(),"{file} invalid channel must fail");
     }
 }
 #[test]
