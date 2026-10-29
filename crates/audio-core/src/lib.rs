@@ -114,7 +114,7 @@ pub fn wav_channel(path:&Path,channel:usize)->Result<AnalysisSnapshot,String>{
             }
         }
     }
-    let mut snapshot = analyze(&path.file_name().unwrap_or_default().to_string_lossy(),"WAV first-channel preview",spec.sample_rate,spec.channels,&samples,available>frames)?;
+    let mut snapshot = analyze(&path.file_name().unwrap_or_default().to_string_lossy(),&format!("WAV channel {} preview",channel+1),spec.sample_rate,spec.channels,&samples,available>frames)?;
     snapshot.metadata = Some(AudioMetadata {
         container:"wav".into(),codec:format!("pcm_{}bit",spec.bits_per_sample),
         sample_rate_hz:spec.sample_rate,channels:spec.channels,
@@ -177,7 +177,7 @@ pub fn pcm_channel(path:&Path,spec:&RawSpec,channel:usize)->Result<AnalysisSnaps
         samples.push(val);
     }
     let mut snapshot=analyze(&path.file_name().unwrap_or_default().to_string_lossy(),
-        &format!("Raw {} PCM first channel",spec.layout),spec.sample_rate_hz,spec.channels,&samples,available>count)?;
+        &format!("Raw {} PCM channel {}",spec.layout,channel+1),spec.sample_rate_hz,spec.channels,&samples,available>count)?;
     snapshot.metadata = Some(AudioMetadata {
         container:"raw".into(),codec:spec.sample_format.clone(),
         sample_rate_hz:spec.sample_rate_hz,channels:spec.channels,
