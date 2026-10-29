@@ -6,7 +6,7 @@
 - Tauri 2 / React / TypeScript / Rust 工程结构及深色工作台，波形和 FFT 频谱使用 uPlot。
 - 文件读取/FFT 分析通过 Rust 后台任务执行，避免同步阻塞界面。
 - 原始 PCM 和 WAV 前三秒首声道读取、归一化，dBFS 与 FFT/波形图。
-- M0 合成演示信号与三项 Rust 数值回归测试。
+- M0 合成演示信号与四项 Rust 数值/PCM 回归测试。
 - ffprobe 诊断（仅识别本机程序，未打包、未解码）；GitHub Actions 工作流。
 - FFmpeg 交叉编码实验：工作流测试 WAV→FLAC/MP3/AAC/Opus，ffprobe 识别及解码为浮点 PCM；这是测试机的 FFmpeg，尚非随包 sidecar。
 - 可复现生成的应用图标及 Windows NSIS 安装包构建工作流。
