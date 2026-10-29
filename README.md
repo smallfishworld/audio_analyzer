@@ -2,7 +2,7 @@
 
 免费开源、离线优先的专业音频文件分析仪。基于 Tauri 2、React、Rust、realfft、uPlot。
 
-当前进度：**M0 工程原型**。CI 尝试构建未签名 Windows NSIS 安装包；仅在构建工作流成功且产物存在时视为可下载原型。FFmpeg sidecar 尚未合规分发。
+当前进度：**M1 多格式导入开发中**。已实现 Rust FFmpeg/ffprobe 解码适配器和元数据分析，支持系统安装了 ffmpeg 与 ffprobe 的开发环境。**Windows 安装包仍不内置 FFmpeg**，因此不能声称压缩格式已做到开箱即用。
 
 ## 已实现的 M0 代码
 - React 专业分析工作台：深色仪表界面、波形、FFT 频谱、峰值/RMS 数值卡片。
@@ -12,7 +12,7 @@
 - Rust 单测：静音、-3.0103 dBFS 正弦 RMS、-6.0206 dBFS 单频 FFT。
 - GitHub Actions 前端、Rust 内核及 Windows 桌面检查（以实际 CI 结果为准）。
 
-**限制**：前三秒预览统计不是整个文件的统计；当前仅导入交错排列裸 PCM。FFmpeg 在 M0 仅作系统可执行文件探测，MP3/AAC/FLAC/Opus 的真实解码属于 M1；STFT、可配置 FFT 与码率导出属于 M2–M3。
+**限制**：前三秒预览统计不是整个文件统计；裸 PCM 已支持 interleaved/planar，但目前仅分析第一声道。压缩格式使用 FFmpeg 解码，只有 ffmpeg 和 ffprobe 可被应用进程找到时才生效；STFT、可配置 FFT、码率导出属于后续阶段。
 
 ## 开发运行
 
@@ -37,3 +37,23 @@ cargo test --manifest-path crates/audio-core/Cargo.toml
 ## Windows M0 安装包
 
 GitHub Actions 的 M0 validation 工作流包含 Windows NSIS 构建和上传步骤；**请仅在该工作流完成且成功后下载 audio-analyzer-m0-windows artifact**。安装包未签名，且不含 FFmpeg 解码能力，仅提供 WAV/裸 PCM 演示与基础分析。
+
+
+## M1 多格式解码（进行中）
+
+目前 Rust 解码适配器可对 WAV、AIFF、FLAC、MP3、AAC ADTS、M4A、OGG Vorbis、Opus、ALAC 等非 DRM 格式进行 ffprobe 探测与 FFmpeg 浮点样本解码（具体格式依赖安装的 FFmpeg 构建，按 CI 验证矩阵确认）。对来源较长的文件只分析首 3 秒 / 最多 576000 采样帧，报告真实文件编码、采样率、码率（可获得时）、声道数和时长，并明确标识 preview。
+
+在开发机安装 FFmpeg/ffprobe 并加入 PATH，运行应用后即可打开上述文件。无法找到时显示具体错误；Windows 安装包尚未内置经过法律审核的 sidecar。
+
+M1 格式回归测试：
+
+~~~sh
+node scripts/generate-m1-fixtures.mjs
+AUDIO_ANALYZER_RUN_CODEC_TESTS=1 cargo test --manifest-path crates/audio-core/Cargo.toml --test multiformat
+~~~
+
+项目不会自动联网下载 FFmpeg，正式独立分发需先通过许可证审核与 Windows 打包测试。详见 [M1 验证记录](docs/m1-validation.md)。
+
+## M1 Preview 版本说明
+
+版本：0.2.0-alpha.1。CI 安装包 Artifact 名为 audio-analyzer-m1-preview-windows。此预览包**不附带 FFmpeg 二进制**；要打开压缩音频，需要运行机 PATH 中有 ffmpeg 与 ffprobe。未签名，不是正式发布。

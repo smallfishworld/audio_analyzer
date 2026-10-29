@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::process::Command;
 use audio_core::{RawSpec,AnalysisSnapshot};
 #[tauri::command]
 fn analyze_demo()->AnalysisSnapshot{audio_core::demo()}
@@ -14,15 +13,21 @@ fn analyze_file_blocking(path:String,raw_spec:Option<RawSpec>)->Result<AnalysisS
     if !p.is_file(){return Err("File does not exist".into());}
     if let Some(spec)=raw_spec{return audio_core::pcm(p,&spec);}
     let ext=p.extension().and_then(|x|x.to_str()).unwrap_or("").to_ascii_lowercase();
-    if ext=="wav"{audio_core::wav(p)}
-    else{Err("M0 supports WAV and configurable raw PCM preview; other formats in M1".into())}
+    if ext=="wav" {
+        // Native fast path remains available for WAV when ffmpeg is not installed.
+        match audio_core::wav(p) {
+            Ok(result)=>Ok(result),
+            Err(_)=>audio_core::ffmpeg::decode_preview(p)
+        }
+    } else if matches!(ext.as_str(), "raw"|"pcm"|"bin") {
+        Err("Raw PCM requires import format settings".into())
+    } else {
+        audio_core::ffmpeg::decode_preview(p)
+    }
 }
 #[tauri::command]
 fn probe_ffmpeg()->String{
-    match Command::new("ffprobe").arg("-version").output(){
-        Ok(x) if x.status.success()=>String::from_utf8_lossy(&x.stdout).lines().next().unwrap_or("ffprobe available").chars().take(58).collect(),
-        _=>"ffprobe unavailable (sidecar planned M1)".into()
-    }
+    audio_core::ffmpeg::availability()
 }
 pub fn run(){
     tauri::Builder::default()

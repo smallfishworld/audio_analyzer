@@ -1,4 +1,4 @@
-name: M0 validation
+name: Audio Analyzer CI
 on:
   push:
     branches: [main]
@@ -36,10 +36,28 @@ jobs:
       - run: npm run build
       - run: npm run prepare:icons
       - run: cargo check --manifest-path src-tauri/Cargo.toml
-      - name: Build unsigned Windows M0 installer
+      - name: Build unsigned Windows M1 preview installer
         run: npm run tauri build -- --bundles nsis
       - uses: actions/upload-artifact@v4
         with:
-          name: audio-analyzer-m0-windows
+          name: audio-analyzer-m1-preview-windows
           path: src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
+
+  codec-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install FFmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg
+      - name: Generate short synthetic codec fixtures
+        run: node scripts/generate-m1-fixtures.mjs
+      - name: Verify FFmpeg metadata and Rust decoding pipeline
+        env:
+          AUDIO_ANALYZER_FIXTURES: tests/fixtures/generated
+          AUDIO_ANALYZER_RUN_CODEC_TESTS: "1"
+        run: cargo test --manifest-path crates/audio-core/Cargo.toml --test multiformat -- --nocapture

@@ -1,3 +1,5 @@
+pub mod ffmpeg;
+pub use ffmpeg::AudioMetadata;
 use realfft::RealFftPlanner;
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Seek, SeekFrom};
@@ -7,7 +9,9 @@ const FFT_N: usize = 4096;
 #[serde(rename_all="camelCase")]
 pub struct RawSpec {
     pub sample_rate_hz:u32, pub channels:u16, pub sample_format:String,
-    pub endianness:String, pub byte_offset:u64
+    pub endianness:String, pub byte_offset:u64,
+    #[serde(default = "default_layout")]
+    pub layout:String
 }
 #[derive(Serialize)]
 #[serde(rename_all="camelCase")]
@@ -22,8 +26,10 @@ pub struct AnalysisSnapshot {
     pub analyzed_frames:usize, pub preview_limited:bool,
     pub peak_dbfs:Option<f64>, pub rms_dbfs:Option<f64>,
     pub dominant_frequency_hz:Option<f64>,
-    pub waveform:Vec<WavePoint>, pub spectrum:Vec<SpectrumPoint>
+    pub waveform:Vec<WavePoint>, pub spectrum:Vec<SpectrumPoint>,
+    pub metadata:Option<AudioMetadata>
 }
+fn default_layout() -> String { "interleaved".into() }
 fn level(n:f64)->Option<f64>{if n.is_finite() && n>0.0{Some(20.0*n.log10())}else{None}}
 fn validate(rate:u32,channels:u16)->Result<(),String>{
     if !(1..=768000).contains(&rate) || !(1..=16).contains(&channels) {
@@ -68,7 +74,8 @@ pub fn analyze(name:&str, kind:&str,rate:u32,channels:u16,samples:&[f64],limited
     Ok(AnalysisSnapshot{
         name:name.into(),source_type:kind.into(),sample_rate_hz:rate,channels,
         analyzed_frames:samples.len(),preview_limited:limited,
-        peak_dbfs:level(peak),rms_dbfs:level(rms),dominant_frequency_hz:dominant,waveform,spectrum
+        peak_dbfs:level(peak),rms_dbfs:level(rms),dominant_frequency_hz:dominant,waveform,spectrum,
+        metadata:None
     })
 }
 pub fn demo()->AnalysisSnapshot{
@@ -103,23 +110,42 @@ pub fn wav(path:&Path)->Result<AnalysisSnapshot,String>{
             }
         }
     }
-    analyze(&path.file_name().unwrap_or_default().to_string_lossy(),"WAV first-channel preview",spec.sample_rate,spec.channels,&samples,available>frames)
+    let mut snapshot = analyze(&path.file_name().unwrap_or_default().to_string_lossy(),"WAV first-channel preview",spec.sample_rate,spec.channels,&samples,available>frames)?;
+    snapshot.metadata = Some(AudioMetadata {
+        container:"wav".into(),codec:format!("pcm_{}bit",spec.bits_per_sample),
+        sample_rate_hz:spec.sample_rate,channels:spec.channels,
+        duration_seconds:Some(available as f64/spec.sample_rate as f64),
+        bit_rate_bps:Some(spec.sample_rate as u64 * spec.channels as u64 * spec.bits_per_sample as u64),
+        bits_per_sample:Some(spec.bits_per_sample),file_bytes:std::fs::metadata(path).map_err(|e|e.to_string())?.len(),
+        audio_stream_index:0
+    });
+    Ok(snapshot)
 }
 pub fn pcm(path:&Path,spec:&RawSpec)->Result<AnalysisSnapshot,String>{
     validate(spec.sample_rate_hz,spec.channels)?;
     let width=match spec.sample_format.as_str(){"u8"|"s8"=>1,"s16"=>2,"s24"=>3,"s32"|"f32"=>4,"f64"=>8,_=>return Err("Invalid PCM format".into())};
     let le=match spec.endianness.as_str(){"little"=>true,"big"=>false,_=>return Err("Invalid endianness".into())};
+    if spec.layout != "planar" && spec.layout != "interleaved" {
+        return Err("PCM layout must be interleaved or planar".into());
+    }
     let frame_bytes=width*spec.channels as usize;
     let mut file=std::fs::File::open(path).map_err(|e|e.to_string())?;
     let bytes=file.metadata().map_err(|e|e.to_string())?.len();
     if spec.byte_offset>=bytes{return Err("PCM header offset exceeds file size".into());}
-    let available=((bytes-spec.byte_offset)/frame_bytes as u64) as usize;
+    let available_u64=(bytes-spec.byte_offset)/frame_bytes as u64;
+    if available_u64>usize::MAX as u64 { return Err("PCM frame count is too large".into()); }
+    let available=available_u64 as usize;
     let count=available.min(limit(spec.sample_rate_hz));
+    if count==0 { return Err("PCM has no complete frames".into()); }
     file.seek(SeekFrom::Start(spec.byte_offset)).map_err(|e|e.to_string())?;
     let mut frame=vec![0u8;frame_bytes];
     let mut samples=Vec::with_capacity(count);
     for _ in 0..count {
-        file.read_exact(&mut frame).map_err(|e|e.to_string())?;
+        if spec.layout=="planar" {
+            file.read_exact(&mut frame[..width]).map_err(|e|e.to_string())?;
+        } else {
+            file.read_exact(&mut frame).map_err(|e|e.to_string())?;
+        }
         let b=&frame[..width];
         let val=match spec.sample_format.as_str(){
             "u8"=>(b[0] as f64-128.0)/128.0,
@@ -137,7 +163,17 @@ pub fn pcm(path:&Path,spec:&RawSpec)->Result<AnalysisSnapshot,String>{
         };
         samples.push(val);
     }
-    analyze(&path.file_name().unwrap_or_default().to_string_lossy(),"Raw interleaved PCM first channel",spec.sample_rate_hz,spec.channels,&samples,available>count)
+    let mut snapshot=analyze(&path.file_name().unwrap_or_default().to_string_lossy(),
+        &format!("Raw {} PCM first channel",spec.layout),spec.sample_rate_hz,spec.channels,&samples,available>count)?;
+    snapshot.metadata = Some(AudioMetadata {
+        container:"raw".into(),codec:spec.sample_format.clone(),
+        sample_rate_hz:spec.sample_rate_hz,channels:spec.channels,
+        duration_seconds:Some(available as f64/spec.sample_rate_hz as f64),
+        bit_rate_bps:Some(spec.sample_rate_hz as u64 * frame_bytes as u64 * 8),
+        bits_per_sample:Some((width*8) as u16),
+        file_bytes:bytes,audio_stream_index:0
+    });
+    Ok(snapshot)
 }
 #[cfg(test)]
 mod tests{
@@ -146,10 +182,23 @@ use super::*;
     use std::io::Write;
     let path=std::env::temp_dir().join(format!("aa_m0_pcm_{}_{}.pcm",std::process::id(),std::thread::current().name().unwrap_or("test")));
     {let mut file=std::fs::File::create(&path).unwrap();file.write_all(&[0,128,0,0,255,127,0,0]).unwrap();}
-    let s=RawSpec{sample_rate_hz:48000,channels:2,sample_format:"s16".into(),endianness:"little".into(),byte_offset:0};
+    let s=RawSpec{sample_rate_hz:48000,channels:2,sample_format:"s16".into(),endianness:"little".into(),byte_offset:0,layout:"interleaved".into()};
     let v=pcm(&path,&s).unwrap();
     assert_eq!(v.analyzed_frames,2);
     assert!((v.peak_dbfs.unwrap()-0.0).abs()<0.0001);
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test] fn raw_planar_and_interleaved_channels() {
+    let path=std::env::temp_dir().join(format!("aa_planar_{}.pcm",std::process::id()));
+    // Planar: channel A [-32768, 32767], channel B [0, 0].
+    std::fs::write(&path,[0,128,255,127,0,0,0,0]).unwrap();
+    let raw=RawSpec{sample_rate_hz:48000,channels:2,sample_format:"s16".into(),
+        endianness:"little".into(),byte_offset:0,layout:"planar".into()};
+    let out=pcm(&path,&raw).unwrap();
+    assert_eq!(out.analyzed_frames,2);
+    assert_eq!(out.peak_dbfs,Some(0.0));
+    assert_eq!(out.metadata.unwrap().channels,2);
     std::fs::remove_file(path).unwrap();
 }
 #[test] fn zero_is_silent(){let v=analyze("silence","test",48000,1,&vec![0.0;4096],false).unwrap();assert_eq!(v.rms_dbfs,None);assert_eq!(v.peak_dbfs,None);}
