@@ -93,7 +93,11 @@ pub fn probe(path: &Path) -> Result<AudioMetadata, String> {
 }
 
 pub fn decode_preview(path: &Path) -> Result<AnalysisSnapshot, String> {
+    decode_preview_channel(path,0)
+}
+pub fn decode_preview_channel(path: &Path, channel: usize) -> Result<AnalysisSnapshot, String> {
     let metadata = probe(path)?;
+    if channel>=metadata.channels as usize {return Err("Selected audio channel is out of range".into());}
     // No implicit resampling or channel mix: first channel copied via explicit pan mapping.
     let max_frames = (metadata.sample_rate_hz as usize).saturating_mul(3).min(576_000);
     let seconds = max_frames as f64 / metadata.sample_rate_hz as f64;
@@ -102,7 +106,7 @@ pub fn decode_preview(path: &Path) -> Result<AnalysisSnapshot, String> {
         "-protocol_whitelist", "file", "-i"]).arg(path)
         .args(["-map", &format!("0:{}", metadata.audio_stream_index),
             "-vn", "-sn", "-dn",
-            "-af", "pan=mono|c0=c0", "-t", &format!("{seconds:.8}"),
+            "-af", &format!("pan=mono|c0=c{channel}"), "-t", &format!("{seconds:.8}"),
             "-c:a", "pcm_f64le", "-f", "f64le", "pipe:1"]);
     let output = run_bounded(&mut cmd, Duration::from_secs(30),
         max_frames.saturating_add(2).saturating_mul(8), 32*1024)?;
@@ -128,5 +132,6 @@ pub fn decode_preview(path: &Path) -> Result<AnalysisSnapshot, String> {
         &format!("{} · {} · first channel", metadata.container, metadata.codec),
         metadata.sample_rate_hz, metadata.channels, &samples, limited)?;
     snapshot.metadata = Some(metadata);
+    snapshot.selected_channel = channel;
     Ok(snapshot)
 }
