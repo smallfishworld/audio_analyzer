@@ -2,6 +2,7 @@
 name="audio-analyzer"
 version="0.2.0-alpha.1"
 edition="2021"
+license="MIT"
 description="Offline audio analyzer"
 
 [lib]
