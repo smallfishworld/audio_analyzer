@@ -182,7 +182,7 @@ use super::*;
     use std::io::Write;
     let path=std::env::temp_dir().join(format!("aa_m0_pcm_{}_{}.pcm",std::process::id(),std::thread::current().name().unwrap_or("test")));
     {let mut file=std::fs::File::create(&path).unwrap();file.write_all(&[0,128,0,0,255,127,0,0]).unwrap();}
-    let s=RawSpec{sample_rate_hz:48000,channels:2,sample_format:"s16".into(),endianness:"little".into(),byte_offset:0};
+    let s=RawSpec{sample_rate_hz:48000,channels:2,sample_format:"s16".into(),endianness:"little".into(),byte_offset:0,layout:"interleaved".into()};
     let v=pcm(&path,&s).unwrap();
     assert_eq!(v.analyzed_frames,2);
     assert!((v.peak_dbfs.unwrap()-0.0).abs()<0.0001);
