@@ -1,0 +1,70 @@
+name: macOS desktop builds
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    name: macOS ${{ matrix.label }} DMG
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: apple-silicon-arm64
+            runner: macos-15
+            target: aarch64-apple-darwin
+          - label: intel-x64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Show native architecture
+        run: |
+          uname -m
+          rustc --version
+          xcodebuild -version
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Generate app icons
+        run: |
+          npm run prepare:icons
+          bash scripts/generate-macos-icons.sh
+          test -s src-tauri/icons/icon.icns
+      - name: Build React UI
+        run: npm run build
+      - name: Validate native Rust app
+        run: cargo check --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }}
+      - name: Build macOS application and DMG
+        run: npm run tauri build -- --target ${{ matrix.target }} --bundles app,dmg
+      - name: Verify macOS bundles and ad-hoc signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="src-tauri/target/${{ matrix.target }}/release/bundle"
+          APP="$(find "$BASE/macos" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          DMG="$(find "$BASE/dmg" -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          [[ -d "$APP" ]] || { echo "App bundle missing"; exit 1; }
+          [[ -s "$DMG" ]] || { echo "DMG missing"; exit 1; }
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          hdiutil verify "$DMG"
+          BINARY="$(find "$APP/Contents/MacOS" -maxdepth 1 -type f -perm -111 -print -quit)"
+          test -n "$BINARY"
+          file "$BINARY"
+          file "$BINARY" | grep -q '${{ matrix.label == 'apple-silicon-arm64' && 'arm64' || 'x86_64' }}'
+          ls -lh "$DMG"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: audio-analyzer-m1-macos-${{ matrix.label }}
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 14

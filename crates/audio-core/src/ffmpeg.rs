@@ -31,6 +31,13 @@ fn bin(name: &str) -> PathBuf {
             if bundled.is_file() { return bundled; }
         }
     }
+    // macOS Finder-launched .app processes normally lack Homebrew paths in PATH.
+    // Probe common local installations without changing the user's shell settings.
+    #[cfg(target_os = "macos")]
+    for directory in ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin"] {
+        let candidate = Path::new(directory).join(&executable);
+        if candidate.is_file() { return candidate; }
+    }
     PathBuf::from(executable) // Development fallback: installed system FFmpeg.
 }
 
