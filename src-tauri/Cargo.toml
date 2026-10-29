@@ -1,0 +1,18 @@
+[package]
+name="audio-analyzer"
+version="0.1.0"
+edition="2021"
+description="Offline audio analyzer"
+
+[lib]
+name="audio_analyzer_lib"
+crate-type=["staticlib","cdylib","rlib"]
+
+[build-dependencies]
+tauri-build="2"
+
+[dependencies]
+tauri="2"
+tauri-plugin-dialog="2"
+audio-core={path="../crates/audio-core"}
+serde={version="1",features=["derive"]}

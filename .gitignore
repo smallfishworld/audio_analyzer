@@ -1,0 +1,9 @@
+node_modules/
+dist/
+**/target/
+*.log
+.DS_Store
+.env
+*.wav
+*.pcm
+*.raw
