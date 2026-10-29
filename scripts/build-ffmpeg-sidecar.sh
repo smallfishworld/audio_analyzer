@@ -44,7 +44,7 @@ esac
 grep -Eq '^License: LGPL' "$WORK/configure.log" || {
   echo "FFmpeg configure did not confirm LGPL" >&2; exit 1;
 }
-make -j "${FFMPEG_BUILD_JOBS:-4}" ffmpeg ffprobe
+make -j "${FFMPEG_BUILD_JOBS:-4}" "ffmpeg${SUFFIX}" "ffprobe${SUFFIX}"
 DEST="$ROOT/src-tauri/third-party/ffmpeg"
 for name in ffmpeg ffprobe; do
   bin="$name${SUFFIX}"
