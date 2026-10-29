@@ -45,3 +45,13 @@
 - CI #11: https://github.com/smallfishworld/audio_analyzer/actions/runs/40884900275
 - 已确认通过：前端 TypeScript/Vite、Rust core 单元测试、8 种格式 Rust 集成解码测试。
 - Windows 编译/安装包构建：以工作流最终结论为准；未经过 Windows 实机启动与安装验收。
+
+## Review 推进（第二阶段）
+
+- 修复 FFmpeg/ffprobe 无超时、stdout/stderr 无固定上限的风险；最大解码预览与采样率联动。
+- WAV、RAW PCM planar/interleaved、FFmpeg 首声道固定限制改为可选 CH1…CHn；通道校验、错误返回与独立测量数据加入测试。
+- UI 加入通道选择器、过期分析请求过滤，避免快速切文件时旧结果覆盖。
+- 新增资源限额、超时测试与八格式第二声道集成测试。
+- 完整代码审查：见 [code-review-m0-m1.md](code-review-m0-m1.md)。
+
+**本次改动仍未包含**整文件分析、真正按视口进行流式采样、合法可分发 FFmpeg sidecar、锁文件和 Windows 真机离线验收。

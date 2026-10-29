@@ -1,6 +1,8 @@
 //! Bounded audio preview through a locally available FFmpeg/ffprobe pair.
 //! Never invokes a shell, accepts network URLs or silently changes the first channel.
 use crate::{analyze, validate, AnalysisSnapshot};
+use crate::process::run_bounded;
+use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -33,8 +35,9 @@ fn bin(name: &str) -> PathBuf {
 }
 
 pub fn availability() -> String {
-    let binary = bin("ffprobe");
-    match Command::new(binary).arg("-version").output() {
+    let mut cmd = Command::new(bin("ffprobe"));
+    cmd.arg("-version");
+    match run_bounded(&mut cmd, Duration::from_secs(3), 16*1024, 4*1024) {
         Ok(output) if output.status.success() =>
             String::from_utf8_lossy(&output.stdout).lines().next()
                 .unwrap_or("ffprobe available").chars().take(90).collect(),
@@ -57,13 +60,12 @@ fn safe_path(path: &Path) -> Result<&Path, String> {
 }
 pub fn probe(path: &Path) -> Result<AudioMetadata, String> {
     safe_path(path)?;
-    let output = Command::new(bin("ffprobe"))
-        .args(["-v", "error", "-protocol_whitelist", "file",
-            "-show_entries",
-            "stream=index,codec_type,codec_name,sample_rate,channels,bits_per_raw_sample,bits_per_sample,bit_rate:format=format_name,duration,bit_rate",
-            "-of", "json", "--"])
-        .arg(path)
-        .output().map_err(|e| format!("ffprobe failed to start: {e}. Install FFmpeg and ffprobe."))?;
+    let mut cmd = Command::new(bin("ffprobe"));
+    cmd.args(["-v", "error", "-protocol_whitelist", "file",
+        "-show_entries",
+        "stream=index,codec_type,codec_name,sample_rate,channels,bits_per_raw_sample,bits_per_sample,bit_rate:format=format_name,duration,bit_rate",
+        "-of", "json", "--"]).arg(path);
+    let output = run_bounded(&mut cmd, Duration::from_secs(15), 1024*1024, 32*1024)?;
     if !output.status.success() {
         return Err(format!("ffprobe could not inspect audio: {}",
             String::from_utf8_lossy(&output.stderr).chars().take(600).collect::<String>()));
@@ -92,19 +94,23 @@ pub fn probe(path: &Path) -> Result<AudioMetadata, String> {
 }
 
 pub fn decode_preview(path: &Path) -> Result<AnalysisSnapshot, String> {
+    decode_preview_channel(path,0)
+}
+pub fn decode_preview_channel(path: &Path, channel: usize) -> Result<AnalysisSnapshot, String> {
     let metadata = probe(path)?;
+    if channel>=metadata.channels as usize {return Err("Selected audio channel is out of range".into());}
     // No implicit resampling or channel mix: first channel copied via explicit pan mapping.
     let max_frames = (metadata.sample_rate_hz as usize).saturating_mul(3).min(576_000);
     let seconds = max_frames as f64 / metadata.sample_rate_hz as f64;
-    let output = Command::new(bin("ffmpeg"))
-        .args(["-nostdin", "-hide_banner", "-loglevel", "error",
-            "-protocol_whitelist", "file", "-i"])
-        .arg(path)
+    let mut cmd = Command::new(bin("ffmpeg"));
+    cmd.args(["-nostdin", "-hide_banner", "-loglevel", "error", "-threads", "1",
+        "-protocol_whitelist", "file", "-i"]).arg(path)
         .args(["-map", &format!("0:{}", metadata.audio_stream_index),
             "-vn", "-sn", "-dn",
-            "-af", "pan=mono|c0=c0", "-t", &format!("{seconds:.8}"),
-            "-c:a", "pcm_f64le", "-f", "f64le", "pipe:1"])
-        .output().map_err(|e| format!("ffmpeg could not start: {e}. Install FFmpeg and ffprobe."))?;
+            "-af", &format!("pan=mono|c0=c{channel}"), "-t", &format!("{seconds:.8}"),
+            "-c:a", "pcm_f64le", "-f", "f64le", "pipe:1"]);
+    let output = run_bounded(&mut cmd, Duration::from_secs(30),
+        max_frames.saturating_add(2).saturating_mul(8), 32*1024)?;
     if !output.status.success() {
         return Err(format!("Audio decode failed: {}",
             String::from_utf8_lossy(&output.stderr).chars().take(600).collect::<String>()));
@@ -127,5 +133,6 @@ pub fn decode_preview(path: &Path) -> Result<AnalysisSnapshot, String> {
         &format!("{} · {} · first channel", metadata.container, metadata.codec),
         metadata.sample_rate_hz, metadata.channels, &samples, limited)?;
     snapshot.metadata = Some(metadata);
+    snapshot.selected_channel = channel;
     Ok(snapshot)
 }

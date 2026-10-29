@@ -7,7 +7,7 @@ type RawSpec = { sampleRateHz: number; channels: number; sampleFormat: string; e
 type Pt = { timeSec: number; min: number; max: number };
 type Bin = { frequencyHz: number; dbfs: number | null };
 type Metadata = { container:string; codec:string; sampleRateHz:number; channels:number; durationSeconds:number|null; bitRateBps:number|null; bitsPerSample:number|null; fileBytes:number; audioStreamIndex:number };
-type Snapshot = { metadata: Metadata | null; name: string; sourceType: string; sampleRateHz: number; channels: number; analyzedFrames: number; previewLimited: boolean; peakDbfs: number | null; rmsDbfs: number | null; dominantFrequencyHz: number | null; waveform: Pt[]; spectrum: Bin[] };
+type Snapshot = { metadata: Metadata | null; selectedChannel: number; name: string; sourceType: string; sampleRateHz: number; channels: number; analyzedFrames: number; previewLimited: boolean; peakDbfs: number | null; rmsDbfs: number | null; dominantFrequencyHz: number | null; waveform: Pt[]; spectrum: Bin[] };
 const initialRaw: RawSpec = { sampleRateHz: 192000, channels: 1, sampleFormat: "s16", endianness: "little", byteOffset: 0, layout: "interleaved" };
 function db(n?: number | null) { return n == null ? "−∞" : n.toFixed(2); }
 function Chart({ title, kind, data }: { title: string; kind: "wave" | "fft"; data: Snapshot | null }) {
@@ -38,7 +38,7 @@ function Chart({ title, kind, data }: { title: string; kind: "wave" | "fft"; dat
     resize.observe(div);
     return () => { resize.disconnect(); plot.destroy(); };
   }, [data, kind]);
-  return <section className="chart-card"><div className="chart-header"><div><small>{kind === "wave" ? "01 / TIME DOMAIN" : "02 / FREQUENCY DOMAIN"}</small><h2>{title}</h2></div><span className="chip">{kind === "wave" ? "CHANNEL 1" : "HANN · 4096"}</span></div><div className="plot" ref={ref}/>{kind === "fft" && data && data.spectrum.length < 2 && <p className="plot-empty">At least 4096 samples are required for FFT preview.</p>}</section>;
+  return <section className="chart-card"><div className="chart-header"><div><small>{kind === "wave" ? "01 / TIME DOMAIN" : "02 / FREQUENCY DOMAIN"}</small><h2>{title}</h2></div><span className="chip">{kind === "wave" ? "CHANNEL " + ((data?.selectedChannel ?? 0) + 1) : "HANN · 4096"}</span></div><div className="plot" ref={ref}/>{kind === "fft" && data && data.spectrum.length < 2 && <p className="plot-empty">At least 4096 samples are required for FFT preview.</p>}</section>;
 }
 export default function App() {
   const [data, setData] = useState<Snapshot | null>(null);
@@ -55,16 +55,25 @@ export default function App() {
   const [error, setError] = useState("");
   const [ffmpeg, setFfmpeg] = useState("not checked");
   const [settings, setSettings] = useState(false);
+  const request = useRef(0);
   async function demo() {
+    const token=++request.current;
     setBusy(true); setError("");
-    try { setData(await invoke<Snapshot>("analyze_demo")); setPath(null); }
-    catch(e) { setError(String(e)); } finally { setBusy(false); }
+    try {
+      const response=await invoke<Snapshot>("analyze_demo");
+      if (token===request.current) { setData(response); setPath(null); }
+    } catch(e) { if (token===request.current) setError(String(e)); }
+    finally { if (token===request.current) setBusy(false); }
   }
   useEffect(() => { void demo(); void invoke<string>("probe_ffmpeg").then(setFfmpeg).catch(() => setFfmpeg("unavailable")); }, []);
-  async function analyze(p: string, spec: RawSpec | null = null) {
+  async function analyze(p: string, spec: RawSpec | null = null, channelIndex = 0) {
+    const token=++request.current;
     setBusy(true); setError("");
-    try { setData(await invoke<Snapshot>("analyze_file", { path: p, rawSpec: spec })); setImportRaw(false); }
-    catch(e) { setError(String(e)); } finally { setBusy(false); }
+    try {
+      const response=await invoke<Snapshot>("analyze_file", { path: p, rawSpec: spec, channelIndex });
+      if (token===request.current) { setData(response); setImportRaw(false); }
+    } catch(e) { if (token===request.current) setError(String(e)); }
+    finally { if (token===request.current) setBusy(false); }
   }
   async function choose() {
     try {
@@ -86,7 +95,7 @@ export default function App() {
     <div className="side-label">WORKSPACE</div><button className="nav active" onClick={() => setSettings(false)}><ChartNoAxesCombined size={17}/> Overview</button>
     <button className="nav" onClick={() => void choose()}><FolderOpen size={17}/> Open audio</button><button className="nav" onClick={() => void demo()}><Radio size={17}/> Demo signal</button>
     <div className="side-label tools">TOOLS</div><button className="nav" onClick={() => setSettings(!settings)}><SlidersHorizontal size={17}/> Settings</button>
-    <div className="side-foot"><div><i/> M0 · PROTOTYPE</div><small>Engineered for precision.</small></div>
+    <div className="side-foot"><div><i/> M1 · PREVIEW</div><small>Engineered for precision.</small></div>
   </aside><main><header className="top"><span>Workspace <ChevronRight size={13}/> <b>Signal overview</b></span><em>DESKTOP · LOCAL</em></header><div className="content">
     <div className="hero"><div><small>✧ NEXT-GEN AUDIO INSIGHTS</small><h1>Signal workspace<span>.</span></h1><p>Discover the details hidden inside every waveform.</p></div><button className="primary" onClick={() => void choose()} disabled={busy}><FolderOpen size={17}/> Open audio file</button></div>
     {error && <div className="error" role="alert">{error}<button onClick={() => setError("")}>✕</button></div>}
@@ -95,7 +104,14 @@ export default function App() {
       {data?.metadata && <p className="metadata">Format: {data.metadata.container} · Codec: {data.metadata.codec}
       {data.metadata.bitRateBps != null ? " · " + Math.round(data.metadata.bitRateBps / 1000) + " kbps" : ""}
       {data.metadata.bitsPerSample != null ? " · " + data.metadata.bitsPerSample + "-bit" : ""}
-      {data.metadata.durationSeconds != null ? " · " + data.metadata.durationSeconds.toFixed(2) + " s" : ""}</p>}</div><span className="ready">{busy ? "ANALYZING" : "READY"}</span></div>
+      {data.metadata.durationSeconds != null ? " · " + data.metadata.durationSeconds.toFixed(2) + " s" : ""}</p>}</div>
+      {data && data.channels > 1 && path && <label className="channel-choice">Channel
+        <select aria-label="Audio channel" disabled={busy} value={data.selectedChannel}
+        onChange={e => void analyze(path, /\.(pcm|raw|bin)$/i.test(path) ? raw : null, Number(e.target.value))}>
+          {Array.from({ length: data.channels },(_,i)=><option key={i} value={i}>CH {i+1}</option>)}
+        </select>
+      </label>}
+      <span className="ready">{busy ? "ANALYZING" : "READY"}</span></div>
     <div className="metrics">
       <div className="metric"><small><Gauge size={17}/> SAMPLE PEAK</small><strong>{db(data?.peakDbfs)} <span>dBFS</span></strong><p>Digital full scale</p></div>
       <div className="metric"><small><Activity size={17}/> RMS LEVEL</small><strong>{db(data?.rmsDbfs)} <span>dBFS</span></strong><p>Preview samples only</p></div>
