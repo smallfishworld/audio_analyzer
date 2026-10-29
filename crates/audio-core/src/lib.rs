@@ -236,6 +236,21 @@ use super::*;
     assert_eq!(pcm_channel(&path,&spec,1).unwrap().rms_dbfs,Some(0.0));
     std::fs::remove_file(&path).unwrap();
 }
+#[test] fn gigabyte_raw_file_preview_does_not_load_whole_file() {
+    use std::fs::File;
+    let path=std::env::temp_dir().join(format!("aa_sparse_gb_{}.pcm",std::process::id()));
+    let file=File::create(&path).unwrap();
+    file.set_len(1_073_741_824).unwrap(); // Sparse 1GiB fixture.
+    drop(file);
+    let spec=RawSpec{sample_rate_hz:48000,channels:1,sample_format:"s16".into(),
+        endianness:"little".into(),byte_offset:0,layout:"interleaved".into()};
+    let out=pcm(&path,&spec).unwrap();
+    assert_eq!(out.analyzed_frames,144_000);
+    assert!(out.preview_limited);
+    assert!(out.waveform.len() <= 1_200);
+    assert_eq!(out.rms_dbfs,None);
+    std::fs::remove_file(&path).unwrap();
+}
 #[test] fn zero_is_silent(){let v=analyze("silence","test",48000,1,&vec![0.0;4096],false).unwrap();assert_eq!(v.rms_dbfs,None);assert_eq!(v.peak_dbfs,None);}
 #[test] fn sine_rms_minus_three_db(){let s:Vec<_>=(0..48000).map(|i|(2.0*std::f64::consts::PI*1000.0*i as f64/48000.0).sin()).collect();let v=analyze("sine","test",48000,1,&s,false).unwrap();assert!((v.rms_dbfs.unwrap()+3.01029995664).abs()<0.001);}
 #[test] fn fft_bin_gain(){let s:Vec<_>=(0..4096).map(|i|0.5*(2.0*std::f64::consts::PI*128.0*i as f64/4096.0).sin()).collect();let v=analyze("sine","test",48000,1,&s,false).unwrap();assert!((v.spectrum[128].dbfs.unwrap()+6.020599913).abs()<0.02);}
