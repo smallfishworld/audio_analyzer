@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "prepare:icons": "node scripts/generate-icons.mjs",
+    "check": "npm run build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

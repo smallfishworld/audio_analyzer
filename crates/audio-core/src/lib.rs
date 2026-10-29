@@ -124,14 +124,14 @@ pub fn pcm(path:&Path,spec:&RawSpec)->Result<AnalysisSnapshot,String>{
         let val=match spec.sample_format.as_str(){
             "u8"=>(b[0] as f64-128.0)/128.0,
             "s8"=>b[0] as i8 as f64/128.0,
-            "s16"=>if le{i16::from_le_bytes([b[0],b[1]])}else{i16::from_be_bytes([b[0],b[1]])} as f64/32768.0,
+            "s16"=>(if le{i16::from_le_bytes([b[0],b[1]])}else{i16::from_be_bytes([b[0],b[1]])}) as f64/32768.0,
             "s24"=>{
                 let u=if le{(b[0] as i32)|((b[1] as i32)<<8)|((b[2] as i32)<<16)}
                     else{(b[2] as i32)|((b[1] as i32)<<8)|((b[0] as i32)<<16)};
                 ((u<<8)>>8) as f64/8388608.0
             },
-            "s32"=>if le{i32::from_le_bytes(b.try_into().unwrap())}else{i32::from_be_bytes(b.try_into().unwrap())} as f64/2147483648.0,
-            "f32"=>if le{f32::from_le_bytes(b.try_into().unwrap())}else{f32::from_be_bytes(b.try_into().unwrap())} as f64,
+            "s32"=>(if le{i32::from_le_bytes(b.try_into().unwrap())}else{i32::from_be_bytes(b.try_into().unwrap())}) as f64/2147483648.0,
+            "f32"=>(if le{f32::from_le_bytes(b.try_into().unwrap())}else{f32::from_be_bytes(b.try_into().unwrap())}) as f64,
             "f64"=>if le{f64::from_le_bytes(b.try_into().unwrap())}else{f64::from_be_bytes(b.try_into().unwrap())},
             _=>unreachable!()
         };
@@ -142,6 +142,16 @@ pub fn pcm(path:&Path,spec:&RawSpec)->Result<AnalysisSnapshot,String>{
 #[cfg(test)]
 mod tests{
 use super::*;
+#[test] fn pcm_s16le_stereo_first_channel() {
+    use std::io::Write;
+    let path=std::env::temp_dir().join(format!("aa_m0_pcm_{}_{}.pcm",std::process::id(),std::thread::current().name().unwrap_or("test")));
+    {let mut file=std::fs::File::create(&path).unwrap();file.write_all(&[0,128,0,0,255,127,0,0]).unwrap();}
+    let s=RawSpec{sample_rate_hz:48000,channels:2,sample_format:"s16".into(),endianness:"little".into(),byte_offset:0};
+    let v=pcm(&path,&s).unwrap();
+    assert_eq!(v.analyzed_frames,2);
+    assert!((v.peak_dbfs.unwrap()-0.0).abs()<0.0001);
+    std::fs::remove_file(path).unwrap();
+}
 #[test] fn zero_is_silent(){let v=analyze("silence","test",48000,1,&vec![0.0;4096],false).unwrap();assert_eq!(v.rms_dbfs,None);assert_eq!(v.peak_dbfs,None);}
 #[test] fn sine_rms_minus_three_db(){let s:Vec<_>=(0..48000).map(|i|(2.0*std::f64::consts::PI*1000.0*i as f64/48000.0).sin()).collect();let v=analyze("sine","test",48000,1,&s,false).unwrap();assert!((v.rms_dbfs.unwrap()+3.01029995664).abs()<0.001);}
 #[test] fn fft_bin_gain(){let s:Vec<_>=(0..4096).map(|i|0.5*(2.0*std::f64::consts::PI*128.0*i as f64/4096.0).sin()).collect();let v=analyze("sine","test",48000,1,&s,false).unwrap();assert!((v.spectrum[128].dbfs.unwrap()+6.020599913).abs()<0.02);}

@@ -30,4 +30,5 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: npm install --no-audit --no-fund
       - run: npm run build
+      - run: npm run prepare:icons
       - run: cargo check --manifest-path src-tauri/Cargo.toml
