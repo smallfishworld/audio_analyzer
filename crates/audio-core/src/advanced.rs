@@ -227,7 +227,9 @@ pub fn analyze_range(path:&Path,raw:Option<&RawSpec>,channel:usize,
                       &mut input,&mut output,gain)?;
         let mut pixels=vec![-120f32;BINS_PER_COLUMN];
         for (i,level) in db.into_iter().enumerate() {
-            let row=(i*(BINS_PER_COLUMN-1))/(fft_size/2);
+            // Round to the nearest output row, not floor: 4 kHz at 32 kHz
+            // must land on row 64/255, not row 63 (62.5 Hz visual offset).
+            let row=(i*(BINS_PER_COLUMN-1)+fft_size/4)/(fft_size/2);
             if level>0.0 {pixels[row]=pixels[row].max((20.0*level.log10()).clamp(-120.0,6.0) as f32);}
         }
         columns.push(pixels);
