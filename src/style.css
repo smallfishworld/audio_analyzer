@@ -144,8 +144,12 @@ body{min-width:760px;overflow:hidden}
   .ws-transport-time{margin-left:5px}
 }
 @media (max-width:950px) {
-  .ws-body{grid-template-columns:140px minmax(0,1fr)}
-  .ws-inspector{display:none}
+  .ws-body{grid-template-columns:140px minmax(0,1fr);position:relative}
+  .ws-inspector{
+    display:block;position:absolute;right:0;top:0;bottom:0;
+    width:min(330px,80vw);z-index:15;border-left:1px solid #52758c;
+    box-shadow:-16px 0 32px rgba(0,0,0,.42)
+  }
   .ws-brand{min-width:140px}
   .ws-top-actions kbd{display:none}
 }
