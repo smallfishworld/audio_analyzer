@@ -90,9 +90,9 @@ fn score(bytes: &[u8], fmt: &str, le: bool) -> Option<f64> {
     if dynamic < n/100 || max < 1e-5 {return None;} // Silence/denormals cannot identify a format.
     let mean=sum/valid as f64;
     let continuity=diff/(valid.saturating_sub(1).max(1) as f64 * mean.max(1e-9));
-    let smooth=if continuity<0.3 {3.0} else if continuity<0.8 {2.0}
+    let smooth: f64=if continuity<0.3 {3.0} else if continuity<0.8 {2.0}
         else if continuity<1.4 {0.8} else if continuity<1.8 {-0.3} else {-1.2};
-    let mut result=smooth;
+    let mut result: f64=smooth;
     if fmt.starts_with('f') {
         // Float reinterpretations of integer PCM generally produce invalid,
         // denormal or impossibly large values, especially for smooth signals.
