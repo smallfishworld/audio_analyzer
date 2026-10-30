@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { AudioLines, FolderOpen, Radio, Waves, Gauge, Activity, ChartNoAxesCombined, SlidersHorizontal, ChevronRight } from "lucide-react";
 import uPlot from "uplot";
+import "uplot/dist/uPlot.min.css";
+import WaveformView from "./WaveformView";
 type RawSpec = { sampleRateHz: number; channels: number; sampleFormat: string; endianness: string; byteOffset: number; layout: "interleaved" | "planar" };
 type RawCandidate = { sampleFormat: string; endianness: string; score: number };
 type RawDetection = { suggested: RawSpec; confidence: "filename" | "heuristic" | "unknown"; inferredFields: string[]; reasons: string[]; candidates: RawCandidate[]; fileBytes: number };
@@ -168,7 +170,7 @@ export default function App() {
         <button className="secondary-btn" disabled={busy}
           onClick={() => void analyze(path, /\.(pcm|raw|bin)$/i.test(path) ? raw : null, data.selectedChannel, fftStartSec)}>Update FFT</button>
       </div>}
-    <div className="charts"><Chart title={data && !data.previewLimited && data.metadata ? "Full-file waveform · Amplitude" : "Waveform · Amplitude"} kind="wave" data={data}/><Chart title="FFT Spectrum · dBFS" kind="fft" data={data}/></div>
+    <div className="charts"><WaveformView data={data}/><Chart title="FFT Spectrum · dBFS" kind="fft" data={data}/></div>
     <footer><span>● {data ? data.analyzedFrames.toLocaleString() + " frames" + (data.previewLimited ? " · PREVIEW ONLY" : " · FULL-FILE SCAN") : "Awaiting input"}</span><span>{ffmpeg} · M1 PREVIEW</span></footer>
   </div></main>
   {importRaw && <div className="overlay"><div className="dialog"><h2>Import raw PCM</h2>
