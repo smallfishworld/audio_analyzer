@@ -246,6 +246,41 @@ pub fn audio_chunk(path:&Path,raw:Option<&RawSpec>,channel:usize,
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn sixty_second_4khz_file_has_valid_full_overview_and_true_zoom_samples() {
+        use std::io::Write;
+        let path=std::env::temp_dir().join(format!("aa_60s_4khz_{}.pcm",std::process::id()));
+        let rate=32000u32;
+        {
+            let mut w=std::io::BufWriter::new(std::fs::File::create(&path).unwrap());
+            for i in 0..rate*60 {
+                let a=(32767.0_f64 *
+                    (2.0*std::f64::consts::PI*4000.0*i as f64/rate as f64).sin()
+                ).round() as i16;
+                w.write_all(&a.to_le_bytes()).unwrap();
+            }
+        }
+        let spec=RawSpec{sample_rate_hz:rate,channels:1,sample_format:"s16".into(),
+            endianness:"little".into(),byte_offset:0,layout:"interleaved".into()};
+        let full=crate::pcm_channel(&path,&spec,0).unwrap();
+        assert_eq!(full.analyzed_frames,1920000);
+        assert_eq!(full.waveform.len(),1200);
+        assert!(full.waveform.iter().all(|p|p.min< -0.99 && p.max>0.99));
+        // Full overview is an envelope by definition, not a sample trace.
+        let raw=audio_chunk(&path,Some(&spec),0,0.017,0.0125).unwrap();
+        assert_eq!(raw.sample_rate_hz,rate);
+        assert_eq!(raw.samples.len(),400);
+        for i in 0..raw.samples.len() {
+            let expected=(2.0*std::f64::consts::PI*4000.0*(544+i) as f64/rate as f64).sin();
+            assert!((raw.samples[i] as f64-expected).abs()<0.00006);
+        }
+        let details=analyze_range(&path,Some(&spec),0,0.0,2.0,4096,"hann").unwrap();
+        assert!((details.peaks[0].frequency_hz-4000.0).abs()<8.0);
+        assert!(details.peaks.iter().all(|p|p.dbfs > -90.0));
+        assert!(details.spectrogram.columns[0][64] > -1.0);
+        assert!((details.rms_dbfs.unwrap()+3.0103).abs()<0.002);
+        std::fs::remove_file(path).unwrap();
+    }
+
     #[test] fn selection_peak_and_harmonics() {
         let path=std::env::temp_dir().join(format!("aa_detail_{}.pcm",std::process::id()));
         let mut bytes=Vec::new();
