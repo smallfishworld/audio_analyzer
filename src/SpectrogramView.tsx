@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 
 export type SpectrogramData = {
   startSec:number;endSec:number;nyquistHz:number;columns:number[][];
@@ -51,7 +51,7 @@ export default function SpectrogramView({data,onSeek}:{
     }
     ctx.putImageData(bitmap,0,0);
   },[data]);
-  function at(e:React.MouseEvent<HTMLCanvasElement>) {
+  function at(e:ReactMouseEvent<HTMLCanvasElement>) {
     if(!data?.columns.length)return;
     const bounds=e.currentTarget.getBoundingClientRect();
     const rx=Math.max(0,Math.min(1,(e.clientX-bounds.left)/bounds.width));
