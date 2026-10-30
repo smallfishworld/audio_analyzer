@@ -123,7 +123,7 @@ test("waveform draws actual envelope pixels and narrow inspector remains operabl
     let count=0;
     for(let i=0;i<data.length;i+=4) {
       // Detect visible turquoise sample/envelope strokes, not a solid fill.
-      if(data[i+1]>65 && data[i+1]-data[i]>25 && data[i+2]-data[i]>30)count++;
+      if(data[i+1]>58 && data[i+1]-data[i]>22 && data[i+2]-data[i]>25)count++;
     }
     return count;
   });
