@@ -9,15 +9,49 @@ TARGET="${1:?Usage: build-ffmpeg-sidecar.sh TARGET_TRIPLE}"
 WORK="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/aa-ffmpeg-${TARGET}"
 mkdir -p "$WORK" "$ROOT/src-tauri/binaries" "$ROOT/src-tauri/third-party/ffmpeg"
 ARCHIVE="$WORK/ffmpeg-${VER}.tar.xz"
+SOURCE_URL="existing cache"
+source_digest() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+if [[ -s "$ARCHIVE" && "$(source_digest "$ARCHIVE")" != "$SRC_SHA256" ]]; then
+  echo "Cached FFmpeg archive checksum mismatch; refusing cached data" >&2
+  rm -f "$ARCHIVE"
+fi
 if [[ ! -s "$ARCHIVE" ]]; then
-  curl --fail --location --retry 3 --proto '=https' --tlsv1.2 \
-    "https://ffmpeg.org/releases/ffmpeg-${VER}.tar.xz" -o "$ARCHIVE"
+  # Some Windows runners cannot connect to ffmpeg.org. Mirror bytes are accepted
+  # ONLY when they match the pinned official release's SHA-256 exactly.
+  URLS=(
+    "https://ffmpeg.org/releases/ffmpeg-${VER}.tar.xz"
+    "https://mse.uk.distfiles.macports.org/ffmpeg/ffmpeg-${VER}.tar.xz"
+    "https://mirrors.omnios.org/ffmpeg/ffmpeg-${VER}.tar.xz"
+  )
+  for url in "${URLS[@]}"; do
+    rm -f "$ARCHIVE.partial"
+    echo "Fetching FFmpeg release archive from: $url"
+    if ! curl --fail --location --connect-timeout 9 --max-time 150 \
+         --retry 2 --retry-delay 2 --proto '=https' --tlsv1.2 \
+         "$url" -o "$ARCHIVE.partial"; then
+      echo "Source download failed; trying next mirror" >&2
+      continue
+    fi
+    ACTUAL="$(source_digest "$ARCHIVE.partial")"
+    if [[ "$ACTUAL" != "$SRC_SHA256" ]]; then
+      echo "Source mirror checksum mismatch; refusing file: $ACTUAL" >&2
+      continue
+    fi
+    mv "$ARCHIVE.partial" "$ARCHIVE"
+    SOURCE_URL="$url"
+    break
+  done
 fi
-if command -v sha256sum >/dev/null 2>&1; then
-  ACTUAL="$(sha256sum "$ARCHIVE" | awk '{print $1}')"
-else
-  ACTUAL="$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')"
+if [[ ! -s "$ARCHIVE" ]]; then
+  echo "No authenticated FFmpeg source download succeeded" >&2; exit 1
 fi
+ACTUAL="$(source_digest "$ARCHIVE")"
 if [[ "$ACTUAL" != "$SRC_SHA256" ]]; then
   echo "FFmpeg source SHA-256 mismatch: $ACTUAL" >&2; exit 1
 fi
@@ -66,6 +100,7 @@ cp LICENSE.md "$DEST/FFMPEG-LICENSE.md"
   echo "Audio Analyzer bundled FFmpeg $VER"
   echo "Source: https://ffmpeg.org/releases/ffmpeg-${VER}.tar.xz"
   echo "Source SHA-256: $SRC_SHA256"
+  echo "Downloaded via: $SOURCE_URL (SHA256 verified)"
   echo "Target: $TARGET"
   echo "License: LGPL 2.1 or later (GPL/nonfree components disabled)"
   echo "Separate command-line tool, no linking into Rust executable."
