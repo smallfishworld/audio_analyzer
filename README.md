@@ -1,6 +1,6 @@
 # Audio Analyzer
 
-**免费、开源、离线优先的音频文件频谱分析桌面软件**。支持 **Windows x64、macOS Apple Silicon、macOS Intel**。使用 Tauri 2 + React + Rust + FFmpeg。
+**免费、开源、离线优先的专业音频分析与可视化工作站**。支持 **Windows x64、macOS Apple Silicon、macOS Intel**，使用 Tauri 2 + React + Rust + FFmpeg。借鉴 Adobe Audition 的波形浏览、选区与频谱分析交互，但**仅做分析，不做音频剪辑、混音或效果处理**。
 
 > **v0.2.0-alpha.3 — 完整 PCM/WAV + 智能导入预览版。** 目前是早期版本，不是完整专业测量套件；具体下载与限制见 [Release 说明](docs/release-v0.2.0-alpha.3.md)。
 
@@ -66,3 +66,9 @@ v0.2.0-alpha.3 已将 RAW PCM 与 PCM WAV 从 3 秒预览升级为**全文件 Pe
 ## 裸 PCM 智能导入（开发版）
 
 打开无头 `.pcm`、`.raw`、`.bin` 时自动尝试分析文件名与少量原始样本，给出格式/端序候选和推断说明，**所有参数仍可手动修改**。RAW PCM 不含标准采样率和声道头信息，不能保证自动识别准确。详细见 [RAW PCM 智能推断文档](docs/raw-pcm-detection.md)。该功能从 v0.2.0-alpha.3 开始提供，原有全部字段均可手动修改。
+
+## 波形显示优化（A0 开发中）
+
+用户反馈波形无法正常显示。审查发现原波形将每个时间桶的 min/max 分别绘制为折线，正弦波在全文件概览下可能呈现上下两条“直线”；同时存在 uPlot 样式缺失的风险。本次修复新增独立 Canvas2D min/max 峰值包络视图、完整时间标尺、指针选区、以鼠标为中心滚轮缩放、Zoom to Selection 与 Fit Entire File，并将波形作为全宽主视图。**只有提交完成并通过平台构建后，新安装包才会提供这项修复。**
+
+参见 [SPEC 2.0](spec.md)；产品明确仅做音频分析，试听也只用于定位分析，不会修改原文件。下一阶段需要多级 LOD 局部波形及 Windows/macOS 真实 GUI 验收，不会把放大 1200 个包络桶冒充样本级波形。
