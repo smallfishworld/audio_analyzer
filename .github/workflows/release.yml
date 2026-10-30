@@ -1,4 +1,4 @@
-name: Publish v0.2.0-alpha.4 preview
+name: Publish v0.2.0-alpha.5 preview
 
 # This workflow only publishes after the two native macOS builds have PASSED.
 # It independently requires the Windows + Rust + 8-codec CI workflow for
@@ -17,7 +17,7 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main' &&
       github.event.workflow_run.conclusion == 'success' &&
-      contains(github.event.workflow_run.head_commit.message, '[release v0.2.0-alpha.4]')
+      contains(github.event.workflow_run.head_commit.message, '[release v0.2.0-alpha.5]')
     runs-on: ubuntu-latest
     timeout-minutes: 35
     permissions:
@@ -39,8 +39,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git show -s --format=%B "$TARGET_SHA" | grep -F '[release v0.2.0-alpha.4]'
-          if gh release view v0.2.0-alpha.4 --repo "$REPO" >/dev/null 2>&1; then
+          git show -s --format=%B "$TARGET_SHA" | grep -F '[release v0.2.0-alpha.5]'
+          if gh release view v0.2.0-alpha.5 --repo "$REPO" >/dev/null 2>&1; then
             echo "::error::Release tag already exists; refusing to overwrite artifacts"
             exit 1
           fi
@@ -104,19 +104,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release create v0.2.0-alpha.4 -R "$REPO" \
+          gh release create v0.2.0-alpha.5 -R "$REPO" \
             --target "$TARGET_SHA" \
-            --title "Audio Analyzer v0.2.0-alpha.4 — Full-file PCM Preview" \
+            --title "Audio Analyzer v0.2.0-alpha.5 — Full-file PCM Preview" \
             --prerelease \
-            --notes-file docs/release-v0.2.0-alpha.4.md \
+            --notes-file docs/release-v0.2.0-alpha.5.md \
             release-assets/*.dmg release-assets/*.exe release-assets/SHA256SUMS.txt
 
       - name: Confirm published release and assets
         shell: bash
         run: |
           set -euo pipefail
-          gh release view v0.2.0-alpha.4 -R "$REPO" \
+          gh release view v0.2.0-alpha.5 -R "$REPO" \
             --json url,isPrerelease,assets \
             --jq '{url: .url, prerelease: .isPrerelease, assets: [.assets[].name]}'
-          ASSETS="$(gh release view v0.2.0-alpha.4 -R "$REPO" --json assets --jq '.assets | length')"
+          ASSETS="$(gh release view v0.2.0-alpha.5 -R "$REPO" --json assets --jq '.assets | length')"
           [[ "$ASSETS" -eq 4 ]]

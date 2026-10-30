@@ -65,7 +65,7 @@ jobs:
           APP="$(find "$BASE/macos" -maxdepth 1 -type d -name '*.app' -print -quit)"
           test -n "$APP"
           mkdir -p "$BASE/dmg"
-          bash scripts/package-macos-dmg.sh "$APP" "$BASE/dmg/Audio_Analyzer_0.2.0-alpha.4_${{ matrix.target }}.dmg"
+          bash scripts/package-macos-dmg.sh "$APP" "$BASE/dmg/Audio_Analyzer_0.2.0-alpha.5_${{ matrix.target }}.dmg"
       - name: Verify macOS bundles and ad-hoc signature
         shell: bash
         run: |

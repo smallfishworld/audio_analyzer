@@ -17,3 +17,7 @@ tests/fixtures/generated/
 # Reproducibly built FFmpeg sidecars and matching source staged by CI
 src-tauri/binaries/*
 src-tauri/third-party/ffmpeg/
+
+# Playwright UI tests and browser snapshots
+playwright-report/
+test-results/

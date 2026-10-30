@@ -2,7 +2,7 @@
 
 **免费、开源、离线优先的专业音频分析与可视化工作站**。支持 **Windows x64、macOS Apple Silicon、macOS Intel**，使用 Tauri 2 + React + Rust + FFmpeg。借鉴 Adobe Audition 的波形浏览、选区与频谱分析交互，但**仅做分析，不做音频剪辑、混音或效果处理**。
 
-> **v0.2.0-alpha.4 — 波形显示修复 + 专业音频分析预览版。** 目前是早期版本，不是完整专业测量套件；具体下载与限制见 [Release 说明](docs/release-v0.2.0-alpha.4.md)。
+> **v0.2.0-alpha.5 — Audition 风格只读分析工作区预览版。** 目前是早期版本，不是完整专业测量套件；具体下载与限制见 [Release 说明](docs/release-v0.2.0-alpha.5.md)。
 
 ## 下载
 
@@ -67,8 +67,16 @@ v0.2.0-alpha.3 已将 RAW PCM 与 PCM WAV 从 3 秒预览升级为**全文件 Pe
 
 打开无头 `.pcm`、`.raw`、`.bin` 时自动尝试分析文件名与少量原始样本，给出格式/端序候选和推断说明，**所有参数仍可手动修改**。RAW PCM 不含标准采样率和声道头信息，不能保证自动识别准确。详细见 [RAW PCM 智能推断文档](docs/raw-pcm-detection.md)。该功能从 v0.2.0-alpha.3 开始提供，原有全部字段均可手动修改。
 
-## 波形显示优化（v0.2.0-alpha.4 首轮修复）
+## 波形显示优化（v0.2.0-alpha.5 首轮修复）
 
-用户反馈波形无法正常显示。审查发现原波形将每个时间桶的 min/max 分别绘制为折线，正弦波在全文件概览下可能呈现上下两条“直线”；同时存在 uPlot 样式缺失的风险。本次修复新增独立 Canvas2D min/max 峰值包络视图、完整时间标尺、指针选区、以鼠标为中心滚轮缩放、Zoom to Selection 与 Fit Entire File，并将波形作为全宽主视图。此修复纳入 v0.2.0-alpha.4 发布候选，须通过平台 CI 验收后才作为可下载安装包提供。
+用户反馈波形无法正常显示。审查发现原波形将每个时间桶的 min/max 分别绘制为折线，正弦波在全文件概览下可能呈现上下两条“直线”；同时存在 uPlot 样式缺失的风险。本次修复新增独立 Canvas2D min/max 峰值包络视图、完整时间标尺、指针选区、以鼠标为中心滚轮缩放、Zoom to Selection 与 Fit Entire File，并将波形作为全宽主视图。此修复纳入 v0.2.0-alpha.5 发布候选，须通过平台 CI 验收后才作为可下载安装包提供。
 
 参见 [SPEC 2.0](spec.md)；产品明确仅做音频分析，试听也只用于定位分析，不会修改原文件。下一阶段需要多级 LOD 局部波形及 Windows/macOS 真实 GUI 验收，不会把放大 1200 个包络桶冒充样本级波形。
+
+## Audition 风格分析工作区（alpha.5）
+
+全新桌面布局：左侧最近打开文件、中央 Canvas 波形与完整文件 Navigator、右侧 Frequency Analysis / Amplitude Statistics / Properties，底部光标、选区与缩放导航。支持 Ctrl/Cmd+O、Home/End、+/-、Esc；FFT 起点可按时间或光标设置。
+
+浏览器 UI 自动化测试使用 Chromium + 模拟 Tauri IPC，覆盖布局、画布有效像素、缩放选区、文件切换、声道切换和窄窗口侧栏，保存截图证据。**尚无真机 GUI 验收、播放能力、样本级 LOD、STFT**；所有操作只读，不提供编辑、混音或处理。
+
+[UI 审查对照表](docs/ui-audition-review.md) · [SPEC 2.0](spec.md)
