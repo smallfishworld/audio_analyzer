@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { AudioLines, FolderOpen, Radio, Waves, Gauge, Activity, ChartNoAxesCombined, SlidersHorizontal, ChevronRight } from "lucide-react";
+import { AudioLines, FolderOpen, Radio, Waves, Gauge, Activity, SlidersHorizontal, ArrowLeftToLine, ArrowRightToLine, ZoomIn, ZoomOut, Maximize2, ScanSearch, FileAudio, ListMusic, Info, X, Crosshair } from "lucide-react";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import WaveformView from "./WaveformView";
+import type { WaveformControls, WaveformRange } from "./WaveformView";
 type RawSpec = { sampleRateHz: number; channels: number; sampleFormat: string; endianness: string; byteOffset: number; layout: "interleaved" | "planar" };
 type RawCandidate = { sampleFormat: string; endianness: string; score: number };
 type RawDetection = { suggested: RawSpec; confidence: "filename" | "heuristic" | "unknown"; inferredFields: string[]; reasons: string[]; candidates: RawCandidate[]; fileBytes: number };
@@ -14,35 +15,44 @@ type Metadata = { container:string; codec:string; sampleRateHz:number; channels:
 type Snapshot = { metadata: Metadata | null; selectedChannel: number; fftWindowStartSec: number | null; name: string; sourceType: string; sampleRateHz: number; channels: number; analyzedFrames: number; previewLimited: boolean; peakDbfs: number | null; rmsDbfs: number | null; dominantFrequencyHz: number | null; waveform: Pt[]; spectrum: Bin[] };
 const initialRaw: RawSpec = { sampleRateHz: 192000, channels: 1, sampleFormat: "s16", endianness: "little", byteOffset: 0, layout: "interleaved" };
 function db(n?: number | null) { return n == null ? "−∞" : n.toFixed(2); }
-function Chart({ title, kind, data }: { title: string; kind: "wave" | "fft"; data: Snapshot | null }) {
+function SpectrumPanel({ data }: { data: Snapshot | null }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!ref.current || !data || (kind === "fft" && data.spectrum.length < 2)) return;
-    const wave = kind === "wave";
-    const arr: uPlot.AlignedData = wave ?
-      [data.waveform.map(p => p.timeSec), data.waveform.map(p => p.min), data.waveform.map(p => p.max)] :
-      [data.spectrum.map(p => p.frequencyHz / 1000), data.spectrum.map(p => p.dbfs)];
-    const div = ref.current;
+    const div=ref.current;
+    if (!div || !data || data.spectrum.length < 2) return;
+    const values: uPlot.AlignedData = [
+      data.spectrum.map(p => p.frequencyHz / 1000),
+      data.spectrum.map(p => p.dbfs)
+    ];
     const config: uPlot.Options = {
-      width: Math.max(300, div.clientWidth), height: 270,
-      cursor: { drag: { x: true, y: false, setScale: true } },
-      legend: { show: false },
-      scales: { x: { time: false }, y: wave ? { min: -1.1, max: 1.1 } : { min: -120, max: 6 } },
-      axes: [
-        { stroke: "#91a9c1", grid: { stroke: "#283c52" }, size: 34 },
-        { stroke: "#91a9c1", grid: { stroke: "#283c52" }, size: 50 }
+      width:Math.max(280,div.clientWidth),height:245,
+      cursor:{drag:{x:true,y:false,setScale:true}},
+      legend:{show:false},
+      scales:{x:{time:false},y:{min:-120,max:6}},
+      axes:[
+        {stroke:"#93a9bb",grid:{stroke:"#283c52"},size:35,label:"Frequency (kHz)",labelSize:14},
+        {stroke:"#93a9bb",grid:{stroke:"#283c52"},size:49,label:"dBFS",labelSize:13}
       ],
-      series: wave ? [
-        {}, { stroke: "#218d9d", width: 1, points: { show: false } },
-        { stroke: "#47d8e7", width: 1, points: { show: false } }
-      ] : [{}, { stroke: "#83b0ff", width: 1.5, points: { show: false }, fill: "#3e71a522" }]
+      series:[{}, {stroke:"#54d7d5",width:1.6,points:{show:false},fill:"#3e71a522"}]
     };
-    const plot = new uPlot(config, arr, div);
-    const resize = new ResizeObserver(() => plot.setSize({ width: Math.max(300, div.clientWidth), height: 270 }));
-    resize.observe(div);
-    return () => { resize.disconnect(); plot.destroy(); };
-  }, [data, kind]);
-  return <section className="chart-card"><div className="chart-header"><div><small>{kind === "wave" ? "01 / TIME DOMAIN" : "02 / FREQUENCY DOMAIN"}</small><h2>{title}</h2></div><span className="chip">{kind === "wave" ? "CHANNEL " + ((data?.selectedChannel ?? 0) + 1) : "HANN · 4096"}</span></div><div className="plot" ref={ref}/>{kind === "fft" && data && data.spectrum.length < 2 && <p className="plot-empty">At least 4096 samples are required for FFT preview.</p>}</section>;
+    const chart = new uPlot(config,values,div);
+    const observer = new ResizeObserver(() => chart.setSize({width:Math.max(280,div.clientWidth),height:245}));
+    observer.observe(div);
+    return () => {observer.disconnect();chart.destroy();};
+  },[data]);
+  return <section className="panel-section spectrum-panel">
+    <header className="panel-title"><span>Frequency Analysis</span><span className="panel-subtle">FFT · Hann 4096</span></header>
+    <div className="plot" ref={ref}/>
+    {(!data || data.spectrum.length < 2) && <p className="plot-empty">A valid FFT needs at least 4096 frames.</p>}
+    <div className="panel-help">Selected channel · frequency in kHz · amplitude in dBFS</div>
+  </section>;
+}
+type HistoryEntry = { path: string; name: string; raw: RawSpec | null };
+function basename(path: string) { return path.split(/[\\/]/).pop() || path; }
+function secs(t: number) {
+  const n=Math.max(0,t);
+  const m=Math.floor(n/60);
+  return String(m).padStart(2,"0")+":"+(n%60).toFixed(3).padStart(6,"0");
 }
 export default function App() {
   const [data, setData] = useState<Snapshot | null>(null);
@@ -66,12 +76,20 @@ export default function App() {
   const [settings, setSettings] = useState(false);
   const [fftStartSec, setFftStartSec] = useState(0);
   const request = useRef(0);
+  const waveRef=useRef<WaveformControls>(null);
+  const [recent, setRecent]=useState<HistoryEntry[]>([]);
+  const [cursorSec, setCursorSec]=useState(0);
+  const [range, setRange]=useState<WaveformRange>(null);
+  const [showInspector, setShowInspector]=useState(true);
+  function addHistory(p:string,spec:RawSpec|null) {
+    setRecent(list => [{path:p,name:basename(p),raw:spec},...list.filter(x=>x.path!==p)].slice(0,12));
+  }
   async function demo() {
     const token=++request.current;
     setBusy(true); setError("");
     try {
       const response=await invoke<Snapshot>("analyze_demo");
-      if (token===request.current) { setData(response); setPath(null); setFftStartSec(0); }
+      if (token===request.current) { setData(response); setPath(null); setFftStartSec(0); setCursorSec(0); setRange(null); }
     } catch(e) { if (token===request.current) setError(String(e)); }
     finally { if (token===request.current) setBusy(false); }
   }
@@ -81,7 +99,7 @@ export default function App() {
     setBusy(true); setError("");
     try {
       const response=await invoke<Snapshot>("analyze_file", { path: p, rawSpec: spec, channelIndex, windowStartSec });
-      if (token===request.current) { setData(response); setImportRaw(false); setFftStartSec(response.fftWindowStartSec ?? 0); }
+      if (token===request.current) { setData(response); setImportRaw(false); setFftStartSec(response.fftWindowStartSec ?? 0); addHistory(p,spec); }
     } catch(e) { if (token===request.current) setError(String(e)); }
     finally { if (token===request.current) setBusy(false); }
   }
@@ -106,22 +124,48 @@ export default function App() {
     setRaw(old => ({...old, sampleFormat: candidate.sampleFormat, endianness: candidate.endianness}));
     setRawUserEdited(true);
   }
+  async function openFile(p:string, knownRaw:RawSpec|null=null) {
+    ++request.current; // Invalidate an older demo/open/analysis response immediately.
+    ++detectorRequest.current;
+    setBusy(false);setError("");setData(null);setRange(null);setCursorSec(0);
+    setPath(p);setFftStartSec(0);
+    if (/\.(pcm|raw|bin)$/i.test(p)) {
+      if (knownRaw) {
+        setRaw(knownRaw);
+        setImportRaw(false);
+        await analyze(p,knownRaw);
+      } else {
+        setImportRaw(true);
+        void detectRaw(p,raw);
+      }
+    } else {
+      setImportRaw(false);setRawDetection(null);
+      await analyze(p);
+    }
+  }
   async function choose() {
     try {
-      const p = await open({ multiple: false, directory: false, title: "Open audio file" });
-      if (typeof p !== "string") return;
-      setPath(p); setFftStartSec(0);
-      ++detectorRequest.current;
-      if (/\.(pcm|raw|bin)$/i.test(p)) {
-        setImportRaw(true);
-        void detectRaw(p, raw);
-      } else {
-        setImportRaw(false);
-        setRawDetection(null);
-        await analyze(p);
-      }
-    } catch(e) { setError(String(e)); }
+      const p=await open({multiple:false,directory:false,title:"Open audio for analysis"});
+      if(typeof p==="string") await openFile(p);
+    } catch(e) {setError(String(e));}
   }
+  useEffect(() => {
+    const handle=(e:KeyboardEvent) => {
+      const target=e.target as HTMLElement|null;
+      if(target?.closest("input, textarea, select, [contenteditable='true']")) return;
+      if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="o") {
+        e.preventDefault();void choose();return;
+      }
+      if(importRaw || !data) return;
+      if(e.key==="Escape") {e.preventDefault();waveRef.current?.fit();}
+      else if(e.key==="Home") {e.preventDefault();waveRef.current?.goToStart();}
+      else if(e.key==="End") {e.preventDefault();waveRef.current?.goToEnd();}
+      else if(e.key==="=" || e.key==="+") {e.preventDefault();waveRef.current?.zoomIn();}
+      else if(e.key==="-") {e.preventDefault();waveRef.current?.zoomOut();}
+    };
+    window.addEventListener("keydown",handle);
+    return () => window.removeEventListener("keydown",handle);
+  });
   function setRawValue(k: keyof RawSpec, v: string) {
     setRawUserEdited(true);
     setRaw(old => {
@@ -130,50 +174,97 @@ export default function App() {
       return updated;
     });
   }
-  return <div className="shell"><aside className="side">
-    <div className="brand"><div className="logo"><AudioLines size={22}/></div><div><b>AUDIO<span>LAB</span></b><small>SIGNAL ANALYZER</small></div></div>
-    <div className="side-label">WORKSPACE</div><button className="nav active" onClick={() => setSettings(false)}><ChartNoAxesCombined size={17}/> Overview</button>
-    <button className="nav" onClick={() => void choose()}><FolderOpen size={17}/> Open audio</button><button className="nav" onClick={() => void demo()}><Radio size={17}/> Demo signal</button>
-    <div className="side-label tools">TOOLS</div><button className="nav" onClick={() => setSettings(!settings)}><SlidersHorizontal size={17}/> Settings</button>
-    <div className="side-foot"><div><i/> M1 · PREVIEW</div><small>Engineered for precision.</small></div>
-  </aside><main><header className="top"><span>Workspace <ChevronRight size={13}/> <b>Signal overview</b></span><em>DESKTOP · LOCAL</em></header><div className="content">
-    <div className="hero"><div><small>✧ NEXT-GEN AUDIO INSIGHTS</small><h1>Signal workspace<span>.</span></h1><p>Discover the details hidden inside every waveform.</p></div><button className="primary" onClick={() => void choose()} disabled={busy}><FolderOpen size={17}/> Open audio file</button></div>
-    {error && <div className="error" role="alert">{error}<button onClick={() => setError("")}>✕</button></div>}
-    {settings && <div className="note"><strong>M1 analysis settings</strong><p>WAV and raw PCM use complete-file RMS, Peak and a bounded waveform overview. FFT reads 4096 frames at the selected time; compressed formats still use three-second previews. Configurable FFT and export are planned in M2–M3.</p></div>}
-    <div className="file"><div className="file-icon"><Waves size={22}/></div><div><strong>{data?.name ?? "Loading…"}</strong><p>{data ? data.sourceType + " · " + (data.sampleRateHz / 1000).toFixed(1) + " kHz · " + data.channels + " ch" : ""}</p>
-      {data?.metadata && <p className="metadata">Format: {data.metadata.container} · Codec: {data.metadata.codec}
-      {data.metadata.bitRateBps != null ? " · " + Math.round(data.metadata.bitRateBps / 1000) + " kbps" : ""}
-      {data.metadata.bitsPerSample != null ? " · " + data.metadata.bitsPerSample + "-bit" : ""}
-      {data.metadata.durationSeconds != null ? " · " + data.metadata.durationSeconds.toFixed(2) + " s" : ""}</p>}</div>
-      {data && data.channels > 1 && path && <label className="channel-choice">Channel
-        <select aria-label="Audio channel" disabled={busy} value={data.selectedChannel}
-        onChange={e => void analyze(path, /\.(pcm|raw|bin)$/i.test(path) ? raw : null, Number(e.target.value), fftStartSec)}>
-          {Array.from({ length: data.channels },(_,i)=><option key={i} value={i}>CH {i+1}</option>)}
-        </select>
-      </label>}
-      <span className="ready">{busy ? "ANALYZING" : "READY"}</span></div>
-    <WaveformView data={data}/>
-    <div className="metrics">
-      <div className="metric"><small><Gauge size={17}/> SAMPLE PEAK</small><strong>{db(data?.peakDbfs)} <span>dBFS</span></strong><p>Digital full scale</p></div>
-      <div className="metric"><small><Activity size={17}/> RMS LEVEL</small><strong>{db(data?.rmsDbfs)} <span>dBFS</span></strong><p>{data && !data.previewLimited && data.metadata ? "Full selected channel" : "Preview samples only"}</p></div>
-      <div className="metric"><small><Radio size={17}/> DOMINANT TONE</small><strong>{data?.dominantFrequencyHz == null ? "—" : (data.dominantFrequencyHz / 1000).toFixed(3)} <span>kHz</span></strong><p>FFT peak frequency bin</p></div>
-      <div className="metric"><small><Waves size={17}/> SAMPLE RATE</small><strong>{data ? (data.sampleRateHz / 1000).toFixed(1) : "—"} <span>kHz</span></strong><p>Nyquist: {data ? (data.sampleRateHz / 2000).toFixed(1) + " kHz" : "—"}</p></div>
+  return <div className="shell workstation">
+    <header className="ws-topbar">
+      <div className="ws-brand"><div className="ws-logo"><AudioLines size={19}/></div><b>Audio Analyzer</b><span>Read-only analysis</span></div>
+      <div className="ws-top-actions">
+        <button type="button" onClick={()=>void choose()}><FolderOpen size={15}/> Open <kbd>⌘/Ctrl O</kbd></button>
+        <button type="button" onClick={()=>void demo()}><Radio size={15}/> Demo</button>
+        <button type="button" className={showInspector?"ws-active":""} onClick={()=>setShowInspector(x=>!x)}><SlidersHorizontal size={15}/> Analysis panels</button>
+      </div>
+      <span className="ws-state">{busy?"ANALYZING…":"LOCAL · OFFLINE"}</span>
+    </header>
+    <div className={"ws-body"+(!showInspector?" no-inspector":"")}>
+      <aside className="ws-files">
+        <header className="panel-title"><span><ListMusic size={15}/> Files</span><span className="panel-subtle">{recent.length}</span></header>
+        <button type="button" className={"file-list-item"+(!path?" selected":"")} onClick={()=>void demo()}><Radio size={15}/><span>Demo signal<small>Generated reference</small></span></button>
+        {recent.length===0 && <p className="ws-empty-files">Open a WAV, PCM, MP3 or another audio file to inspect it.</p>}
+        {recent.map(item=><button type="button" title={item.path} key={item.path}
+          className={"file-list-item"+(path===item.path?" selected":"")} onClick={()=>void openFile(item.path,item.raw)}>
+          <FileAudio size={16}/><span>{item.name}<small>{item.raw ? "RAW PCM" : "Audio"}</small></span>
+        </button>)}
+        <div className="ws-files-bottom">
+          <button type="button" onClick={()=>void choose()}><FolderOpen size={15}/> Add audio file</button>
+          <button type="button" onClick={()=>setSettings(x=>!x)}><Info size={15}/> {settings?"Hide":"Show"} analysis info</button>
+          <small>Files are read-only. Nothing is modified.</small>
+        </div>
+      </aside>
+      <main className="ws-editor">
+        <div className="ws-editor-tab"><Waves size={15}/><strong title={path??"Synthetic signal"}>{data?.name??(busy?"Analyzing…":"No file selected")}</strong><span>{data?data.channels+" ch · "+(data.sampleRateHz/1000).toFixed(2)+" kHz":""}</span></div>
+        {error && <div className="error" role="alert">{error}<button type="button" aria-label="Dismiss error" onClick={()=>setError("")}><X size={14}/></button></div>}
+        {settings && <div className="note"><strong>Analysis mode — no editing</strong>
+          <p>RAW PCM/WAV: full-file min/max waveform and Peak/RMS. Compressed formats may show only a three-second preview. Current FFT is a single 4096-frame window; full-resolution zoom and playback are planned, not yet implemented.</p></div>}
+        <div className="ws-editor-heading">
+          <span><Waves size={14}/> Waveform viewer</span>
+          <span className="ws-muted">{data?.previewLimited?"PREVIEW · FIRST 3 SECONDS":"READ-ONLY · FULL OVERVIEW"}</span>
+        </div>
+        <WaveformView ref={waveRef} data={data}
+          onCursorChange={setCursorSec} onSelectionChange={setRange}/>
+        <div className="ws-editor-tools">
+          <span>FFT window</span>
+          <label>Start (s)<input aria-label="FFT window start" type="number" min="0" step="0.001"
+            value={fftStartSec} onChange={e=>setFftStartSec(Number(e.target.value))}/></label>
+          <button type="button" disabled={!path||busy||data?.previewLimited}
+            onClick={()=>path&&void analyze(path,/\.(pcm|raw|bin)$/i.test(path)?raw:null,data?.selectedChannel??0,fftStartSec)}>
+            <ScanSearch size={14}/> Analyze window
+          </button>
+          <button type="button" disabled={!path||busy||data?.previewLimited}
+            onClick={()=>setFftStartSec(cursorSec)}><Crosshair size={14}/> Use cursor</button>
+          <span className="ws-muted">4096 frames · current channel</span>
+        </div>
+        <div className="ws-transport" aria-label="Waveform navigation controls">
+          <span className="ws-transport-label">NAVIGATE</span>
+          <button type="button" title="Beginning (Home)" onClick={()=>waveRef.current?.goToStart()}><ArrowLeftToLine size={17}/></button>
+          <button type="button" title="End (End)" onClick={()=>waveRef.current?.goToEnd()}><ArrowRightToLine size={17}/></button>
+          <div className="ws-transport-divider"/>
+          <button type="button" title="Zoom in (+)" onClick={()=>waveRef.current?.zoomIn()}><ZoomIn size={17}/></button>
+          <button type="button" title="Zoom out (-)" onClick={()=>waveRef.current?.zoomOut()}><ZoomOut size={17}/></button>
+          <button type="button" title="Zoom to selection" disabled={!range||Math.abs(range.end-range.start)===0} onClick={()=>waveRef.current?.zoomSelection()}><ScanSearch size={17}/></button>
+          <button type="button" title="Fit entire file (Escape)" onClick={()=>waveRef.current?.fit()}><Maximize2 size={17}/></button>
+          <div className="ws-transport-time">Cursor <b>{secs(cursorSec)}</b></div>
+          <div className="ws-transport-time">Selection <b>{range?secs(Math.abs(range.end-range.start)):"--:--.---"}</b></div>
+        </div>
+        <div className="ws-editor-meta">
+          <span>{data ? data.sourceType+" · "+data.analyzedFrames.toLocaleString()+" analyzed frames" : "Open an audio file to start."}</span>
+          <span>Zoom is limited by the cached overview resolution; sample-level LOD is planned.</span>
+        </div>
+      </main>
+      {showInspector && <aside className="ws-inspector">
+        <SpectrumPanel data={data}/>
+        <section className="panel-section ws-stats">
+          <header className="panel-title"><span>Amplitude Statistics</span><span className="panel-subtle">{data?.previewLimited?"Preview":"Full selected channel"}</span></header>
+          <div className="ws-stat"><span><Gauge size={13}/> Sample Peak</span><strong>{db(data?.peakDbfs)} <small>dBFS</small></strong></div>
+          <div className="ws-stat"><span><Activity size={13}/> RMS Level</span><strong>{db(data?.rmsDbfs)} <small>dBFS</small></strong></div>
+          <div className="ws-stat"><span><Radio size={13}/> Dominant frequency</span><strong>{data?.dominantFrequencyHz==null?"—":(data.dominantFrequencyHz/1000).toFixed(3)} <small>kHz</small></strong></div>
+          <div className="ws-stat"><span><Waves size={13}/> Sample rate</span><strong>{data?(data.sampleRateHz/1000).toFixed(2):"—"} <small>kHz</small></strong></div>
+          <p className="ws-muted ws-stat-note">Peak/RMS and FFT use different measurement windows. Values are digital dBFS, not acoustic dB SPL.</p>
+        </section>
+        <section className="panel-section ws-properties">
+          <header className="panel-title"><span>Properties</span><span className="panel-subtle">Source</span></header>
+          <div className="ws-prop"><span>Filename</span><strong>{data?.name??"—"}</strong></div>
+          <div className="ws-prop"><span>Codec</span><strong>{data?.metadata?.codec??"—"}</strong></div>
+          <div className="ws-prop"><span>Duration</span><strong>{data?.metadata?.durationSeconds==null?"—":secs(data.metadata.durationSeconds)}</strong></div>
+          <div className="ws-prop"><span>Channel</span>{data&&data.channels>1&&path
+            ? <select aria-label="Selected audio channel" value={data.selectedChannel} disabled={busy}
+                onChange={e=>void analyze(path,/\.(pcm|raw|bin)$/i.test(path)?raw:null,Number(e.target.value),fftStartSec)}>
+                {Array.from({length:data.channels},(_,i)=><option key={i} value={i}>CH {i+1}</option>)}
+              </select>
+            : <strong>CH {(data?.selectedChannel??0)+1}</strong>}</div>
+          <div className="ws-prop"><span>Bit rate</span><strong>{data?.metadata?.bitRateBps==null?"—":Math.round(data.metadata.bitRateBps/1000)+" kbps"}</strong></div>
+        </section>
+      </aside>}
     </div>
-    {path && data && !data.previewLimited && ["raw","wav"].includes(data.metadata?.container ?? "") &&
-      <div className="fft-selection">
-        <div><strong>Full-file PCM analyzed</strong><p>Peak / RMS and overview cover {data.metadata?.durationSeconds?.toFixed(2)} seconds. FFT uses a 4096-frame Hann window at the selected time.</p></div>
-        <label>FFT start (s)
-          <input aria-label="FFT start time seconds" type="number" step="0.01" min="0"
-            max={Math.max(0,(data.metadata?.durationSeconds ?? 0)-4096/data.sampleRateHz).toFixed(3)}
-            value={fftStartSec} disabled={busy}
-            onChange={e => setFftStartSec(Number(e.target.value))}/>
-        </label>
-        <button className="secondary-btn" disabled={busy}
-          onClick={() => void analyze(path, /\.(pcm|raw|bin)$/i.test(path) ? raw : null, data.selectedChannel, fftStartSec)}>Update FFT</button>
-      </div>}
-    <div className="charts"><Chart title="FFT Spectrum · dBFS" kind="fft" data={data}/></div>
-    <footer><span>● {data ? data.analyzedFrames.toLocaleString() + " frames" + (data.previewLimited ? " · PREVIEW ONLY" : " · FULL-FILE SCAN") : "Awaiting input"}</span><span>{ffmpeg} · M1 PREVIEW</span></footer>
-  </div></main>
+    <footer className="ws-statusbar"><span>{busy?"● Analyzing…":data?"● Ready":"● No audio"} · {ffmpeg}</span><span>Waveform / Analysis workspace · v0.2.0-alpha.4</span></footer>
   {importRaw && <div className="overlay"><div className="dialog"><h2>Import raw PCM</h2>
     <p>Raw PCM has no header. Format detection is best-effort — check the proposed values before analysis.</p>
     <div className="raw-detection">
