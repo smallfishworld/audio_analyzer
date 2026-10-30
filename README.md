@@ -4,6 +4,12 @@
 
 > **v0.2.0-alpha.5 — Audition 风格只读分析工作区预览版。** 目前是早期版本，不是完整专业测量套件；具体下载与限制见 [Release 说明](docs/release-v0.2.0-alpha.5.md)。
 
+## P1/P2 分支新功能（main 合并后可从源码构建）
+
+本轮开发新增可配置 FFT (1024–16384 点)、Hann/Hamming/Blackman/Rectangular 窗函数、选区峰值/RMS、前五个频谱峰值及频率光标，以及基于 STFT 的时频谱（点击时频图可跳转波形时间）。新增只读试听 Play/Pause/Stop 和选区循环播放，使用流式 PCM 分块预缓冲；**不修改音频原文件**。
+
+请注意：**GitHub 最新正式预览安装包 v0.2.0-alpha.5 仍然不包含 P1/P2 的新功能**；只有将开发分支合入 main 后的源码才包含这些改动，在新 Release 发布前请不要将旧安装包描述为支持播放或可配置 FFT。选区高级分析有 2,097,152 帧的单次预算限制，大范围需拆分分析。详情见 [P1/P2 开发与验收记录](docs/p1-p2-verification.md)。
+
 ## 下载
 
 从 [GitHub Releases](https://github.com/smallfishworld/audio_analyzer/releases) 下载：
