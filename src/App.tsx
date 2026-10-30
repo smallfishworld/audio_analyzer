@@ -43,7 +43,7 @@ function SpectrumPanel({ data, detail }: { data: Snapshot | null; detail: Detail
         {stroke:"#93a9bb",grid:{stroke:"#283c52"},size:35,label:"Frequency (kHz)",labelSize:14},
         {stroke:"#93a9bb",grid:{stroke:"#283c52"},size:49,label:"dBFS",labelSize:13}
       ],
-      series:[{}, {stroke:"#54d7d5",width:1.6,points:{show:false},fill:"#3e71a522"}]
+      series:[{}, {stroke:"#54d7d5",width:1.8,points:{show:false}}]
     };
     const chart = new uPlot(config,values,div);
     const onPick=(e:MouseEvent)=>{
@@ -60,6 +60,11 @@ function SpectrumPanel({ data, detail }: { data: Snapshot | null; detail: Detail
   return <section className="panel-section spectrum-panel">
     <header className="panel-title"><span>Frequency Analysis</span><span className="panel-subtle">FFT · {detail?.window??"Hann"} {detail?.fftSize??4096}</span></header>
     <div className="plot" ref={ref}/>
+    {detail?.peaks[0] && <div className="spectrum-primary-peak">
+      <span>STRONGEST PEAK</span>
+      <strong>{detail.peaks[0].frequencyHz.toFixed(1)} Hz</strong>
+      <span>{detail.peaks[0].dbfs.toFixed(2)} dBFS</span>
+    </div>}
     {(!data || (detail?.spectrum??data.spectrum).length < 2) && <p className="plot-empty">Select sufficient audio for a valid FFT.</p>}
     {detail && <div className="spectrum-peaks">
       <div className="panel-help">Selected range: {detail.startSec.toFixed(3)}–{detail.endSec.toFixed(3)} s
@@ -276,12 +281,13 @@ export default function App() {
         <div className="ws-editor-tab"><Waves size={15}/><strong title={path??"Synthetic signal"}>{data?.name??(busy?"Analyzing…":"No file selected")}</strong><span>{data?data.channels+" ch · "+(data.sampleRateHz/1000).toFixed(2)+" kHz":""}</span></div>
         {error && <div className="error" role="alert">{error}<button type="button" aria-label="Dismiss error" onClick={()=>setError("")}><X size={14}/></button></div>}
         {settings && <div className="note"><strong>Analysis mode — no editing</strong>
-          <p>RAW PCM/WAV: full-file min/max waveform and Peak/RMS. Compressed formats may show only a three-second preview. FFT windows and selected-range STFT are configurable. Playback uses read-only streamed PCM chunks; full-resolution waveform LOD is still planned.</p></div>}
+          <p>RAW PCM/WAV: full-file min/max waveform and Peak/RMS. Compressed formats may show only a three-second preview. FFT windows and selected-range STFT are configurable. Playback uses read-only streamed PCM chunks; sample-level waveform uses on-demand bounded PCM reads at close zoom.</p></div>}
         <div className="ws-editor-heading">
           <span><Waves size={14}/> Waveform viewer</span>
           <span className="ws-muted">{data?.previewLimited?"PREVIEW · FIRST 3 SECONDS":"READ-ONLY · FULL OVERVIEW"}</span>
         </div>
         <WaveformView ref={waveRef} data={data} playheadSec={playhead}
+          sourcePath={path} rawSpec={path && /\.(pcm|raw|bin)$/i.test(path) ? raw : null}
           onCursorChange={setCursorSec} onSelectionChange={setRange}/>
         <SpectrogramView data={detail?.spectrogram??null}
           onSeek={t=>waveRef.current?.setCursor(t)}/>
@@ -319,6 +325,8 @@ export default function App() {
           <button type="button" title="Beginning (Home)" onClick={()=>waveRef.current?.goToStart()}><ArrowLeftToLine size={17}/></button>
           <button type="button" title="End (End)" onClick={()=>waveRef.current?.goToEnd()}><ArrowRightToLine size={17}/></button>
           <div className="ws-transport-divider"/>
+          <button type="button" title="Show individual audio samples" aria-label="Show sample detail"
+            onClick={()=>waveRef.current?.zoomSamples()} disabled={!data||!path}><Activity size={17}/></button>
           <button type="button" title="Zoom in (+)" onClick={()=>waveRef.current?.zoomIn()}><ZoomIn size={17}/></button>
           <button type="button" title="Zoom out (-)" onClick={()=>waveRef.current?.zoomOut()}><ZoomOut size={17}/></button>
           <button type="button" title="Zoom to selection" disabled={!range||Math.abs(range.end-range.start)===0} onClick={()=>waveRef.current?.zoomSelection()}><ScanSearch size={17}/></button>
@@ -328,7 +336,7 @@ export default function App() {
         </div>
         <div className="ws-editor-meta">
           <span>{data ? data.sourceType+" · "+data.analyzedFrames.toLocaleString()+" analyzed frames" : "Open an audio file to start."}</span>
-          <span>Read-only audio playback. Spectrogram uses a bounded analysis selection; waveform sample-level LOD is planned.</span>
+          <span>Read-only analysis · waveform switches from full-file overview to real PCM samples at close zoom.</span>
         </div>
       </main>
       {showInspector && <aside className="ws-inspector">

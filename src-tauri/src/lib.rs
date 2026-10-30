@@ -46,6 +46,14 @@ async fn analyze_range(path:String,raw_spec:Option<RawSpec>,channel_index:usize,
     ).await.map_err(|e|format!("Analysis task failed: {e}"))?
 }
 #[tauri::command]
+async fn waveform_samples(path:String,raw_spec:Option<RawSpec>,channel_index:usize,
+        start_sec:f64,duration_sec:f64)->Result<audio_core::advanced::WaveSamples,String>{
+    tauri::async_runtime::spawn_blocking(move ||
+        audio_core::advanced::waveform_samples(Path::new(&path),raw_spec.as_ref(),
+            channel_index,start_sec,duration_sec)
+    ).await.map_err(|e|format!("Waveform read failed: {e}"))?
+}
+#[tauri::command]
 async fn audio_chunk(path:String,raw_spec:Option<RawSpec>,channel_index:usize,
         start_sec:f64,duration_sec:f64)->Result<audio_core::advanced::AudioChunk,String>{
     tauri::async_runtime::spawn_blocking(move ||
@@ -57,7 +65,7 @@ async fn audio_chunk(path:String,raw_spec:Option<RawSpec>,channel_index:usize,
 pub fn run(){
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![analyze_demo,analyze_file,detect_raw_pcm,probe_ffmpeg,analyze_range,audio_chunk])
+        .invoke_handler(tauri::generate_handler![analyze_demo,analyze_file,detect_raw_pcm,probe_ffmpeg,analyze_range,audio_chunk,waveform_samples])
         .run(tauri::generate_context!())
         .expect("unable to start Audio Analyzer");
 }

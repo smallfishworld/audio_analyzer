@@ -169,3 +169,19 @@ body{min-width:760px;overflow:hidden}
 .spectrum-peaks button:hover{background:#285369}
 .spectrum-peaks button span,.spectrum-peaks small{color:#8eacbd}
 .ws-editor-tools .error{max-width:100%;color:#ffb39c;padding:6px;font-size:11px}
+
+/* True waveform samples, high-contrast STFT, and frequency readouts */
+.spectrogram-scale{display:flex;align-items:center;gap:9px;padding:0 11px 10px 49px;color:#9bb7c7;font-size:10px}
+.spectrogram-scale-ramp{flex:1;height:8px;border-radius:3px;border:1px solid #465566;background:linear-gradient(to right,#070d17 0%,#0c1825 18%,#18364e 38%,#1f647f 57%,#17b9a6 71%,#fa9d48 87%,#fff1c2 100%)}
+.spectrum-primary-peak{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 9px 5px;padding:7px 9px;border:1px solid #345b63;border-radius:4px;background:#16313d;color:#8ecfc9;font-size:10px}
+.spectrum-primary-peak strong{font-size:13px;color:#d8fff8;letter-spacing:.2px}
+.spectrogram-layout canvas{background:#070d17}
+
+/* Keep canvases physically sized: flex-shrinking a chart section clips its
+   canvas and makes WebView pointer events hit neighboring controls. */
+.ws-editor .waveform-editor,.ws-editor .ws-spectrogram,.ws-editor .ws-editor-tools,
+.ws-editor .ws-transport,.ws-editor .ws-editor-meta,.ws-editor .ws-editor-heading{
+  flex-shrink:0;
+}
+.ws-editor .ws-spectrogram{min-height:0;overflow:visible}
+.ws-editor .spectrogram-layout canvas{display:block}
