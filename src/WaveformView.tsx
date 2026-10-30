@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { Maximize2, ZoomIn, ZoomOut } from "lucide-react";
 
 type EnvelopePoint = { timeSec: number; min: number; max: number };
@@ -161,10 +162,24 @@ export default function WaveformView({ data }: { data: WaveData | null }) {
     }
   }, [data, points, view, selection, cursor, width, duration, xForTime]);
 
-  function pointerX(event: React.PointerEvent<HTMLCanvasElement>) {
+  // Native non-passive handler allows wheel zoom without scrolling the entire page.
+  // React's delegated wheel listeners can be passive in Chromium-based WebViews.
+  useEffect(() => {
+    const el = canvas.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!data || !points.length) return;
+      e.preventDefault();
+      zoom(e.deltaY > 0 ? 1.28 : 1 / 1.28,
+        timeFromX(e.clientX - el.getBoundingClientRect().left));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [data, points.length, zoom, timeFromX]);
+  function pointerX(event: ReactPointerEvent<HTMLCanvasElement>) {
     return event.clientX - event.currentTarget.getBoundingClientRect().left;
   }
-  function down(e: React.PointerEvent<HTMLCanvasElement>) {
+  function down(e: ReactPointerEvent<HTMLCanvasElement>) {
     if (!data || points.length === 0) return;
     if (pointerX(e) < LEFT) return;
     const t = timeFromX(pointerX(e));
@@ -173,11 +188,11 @@ export default function WaveformView({ data }: { data: WaveData | null }) {
     setSelection({ start: t, end: t });
     e.currentTarget.setPointerCapture(e.pointerId);
   }
-  function move(e: React.PointerEvent<HTMLCanvasElement>) {
+  function move(e: ReactPointerEvent<HTMLCanvasElement>) {
     if (dragging.current == null) return;
     setSelection({ start: dragging.current, end: timeFromX(pointerX(e)) });
   }
-  function up(e: React.PointerEvent<HTMLCanvasElement>) {
+  function up(e: ReactPointerEvent<HTMLCanvasElement>) {
     dragging.current = null;
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
   }
@@ -209,11 +224,6 @@ export default function WaveformView({ data }: { data: WaveData | null }) {
         aria-label="Waveform envelope, drag to select a time range; double-click to reset zoom"
         onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
         onDoubleClick={reset}
-        onWheel={e => {
-          if (!data || !points.length) return;
-          e.preventDefault();
-          zoom(e.deltaY > 0 ? 1.28 : 1 / 1.28, timeFromX(e.clientX - e.currentTarget.getBoundingClientRect().left));
-        }}
       />
     </div>
     <div className="wave-status">
