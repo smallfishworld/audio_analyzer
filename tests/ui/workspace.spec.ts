@@ -9,7 +9,7 @@ test.beforeEach(async ({ page }) => {
       return { timeSec: i * 0.01, min: -amplitude, max: amplitude };
     });
     const spectrum = Array.from({ length: 129 }, (_, i) => ({
-      frequencyHz: i * 250, dbfs: -80 + 60 * Math.exp(-((i - 16) / 5) ** 2),
+      frequencyHz: i * 250, dbfs: -80 + 60 * Math.exp(-Math.pow((i - 16) / 5, 2)),
     }));
     const snapshot = (name: string) => ({
       name, sourceType: "WAV PCM", sampleRateHz: 32000, channels: 2,
