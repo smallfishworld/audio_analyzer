@@ -18,6 +18,29 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg
       - name: FFmpeg codec spike (installed runner binary)
         run: node scripts/verify-ffmpeg.mjs
+  frontend-ui:
+    name: Browser UI layout and interaction
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - name: Test dock geometry, waveform selection and keyboard operations
+        run: npm run test:ui
+      - name: Upload GUI screenshots / traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audio-analyzer-browser-ui-evidence
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
   audio-core:
     runs-on: ubuntu-latest
     steps:
