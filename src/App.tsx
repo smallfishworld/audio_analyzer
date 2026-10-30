@@ -43,7 +43,7 @@ function SpectrumPanel({ data, detail }: { data: Snapshot | null; detail: Detail
         {stroke:"#93a9bb",grid:{stroke:"#283c52"},size:35,label:"Frequency (kHz)",labelSize:14},
         {stroke:"#93a9bb",grid:{stroke:"#283c52"},size:49,label:"dBFS",labelSize:13}
       ],
-      series:[{}, {stroke:"#54d7d5",width:1.6,points:{show:false},fill:"#3e71a522"}]
+      series:[{}, {stroke:"#54d7d5",width:1.8,points:{show:false}}]
     };
     const chart = new uPlot(config,values,div);
     const onPick=(e:MouseEvent)=>{
@@ -60,6 +60,11 @@ function SpectrumPanel({ data, detail }: { data: Snapshot | null; detail: Detail
   return <section className="panel-section spectrum-panel">
     <header className="panel-title"><span>Frequency Analysis</span><span className="panel-subtle">FFT · {detail?.window??"Hann"} {detail?.fftSize??4096}</span></header>
     <div className="plot" ref={ref}/>
+    {detail?.peaks[0] && <div className="spectrum-primary-peak">
+      <span>STRONGEST PEAK</span>
+      <strong>{detail.peaks[0].frequencyHz.toFixed(1)} Hz</strong>
+      <span>{detail.peaks[0].dbfs.toFixed(2)} dBFS</span>
+    </div>}
     {(!data || (detail?.spectrum??data.spectrum).length < 2) && <p className="plot-empty">Select sufficient audio for a valid FFT.</p>}
     {detail && <div className="spectrum-peaks">
       <div className="panel-help">Selected range: {detail.startSec.toFixed(3)}–{detail.endSec.toFixed(3)} s

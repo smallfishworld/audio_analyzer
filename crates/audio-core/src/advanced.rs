@@ -206,6 +206,11 @@ pub fn analyze_range(path:&Path,raw:Option<&RawSpec>,channel:usize,
             Peak{frequency_hz:(i as f64+offset)*step,dbfs:20.0*avg[i].log10()}
         }).collect();
     peaks.sort_by(|a,b|b.dbfs.total_cmp(&a.dbfs));
+    // Machine-noise and floating point sidelobes around −100 dBFS should
+    // not look like genuine harmonics of a clean pure sine.
+    if let Some(strongest)=peaks.first().map(|p|p.dbfs) {
+        peaks.retain(|p|p.dbfs>=-90.0 && p.dbfs>=strongest-60.0);
+    }
     peaks.truncate(5);
     // A bounded STFT: equally spaced overlapping windows, max 220 x 256 output.
     let hop_stft=((samples.len()-fft_size)/MAX_COLUMNS.max(1)).max((fft_size/4).max(1));
