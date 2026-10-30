@@ -2,11 +2,11 @@
 
 **免费、开源、离线优先的音频文件频谱分析桌面软件**。支持 **Windows x64、macOS Apple Silicon、macOS Intel**。使用 Tauri 2 + React + Rust + FFmpeg。
 
-> **v0.2.0-alpha.2 — 完整 PCM/WAV 分析预览版。** 目前是早期版本，不是完整专业测量套件；具体下载与限制见 [Release 说明](docs/release-v0.2.0-alpha.2.md)。
+> **v0.2.0-alpha.3 — 完整 PCM/WAV + 智能导入预览版。** 目前是早期版本，不是完整专业测量套件；具体下载与限制见 [Release 说明](docs/release-v0.2.0-alpha.3.md)。
 
 ## 下载
 
-首次预览版发布成功后，从 [GitHub Releases](https://github.com/smallfishworld/audio_analyzer/releases) 下载：
+从 [GitHub Releases](https://github.com/smallfishworld/audio_analyzer/releases) 下载：
 
 | 设备 | 安装文件 | 注意 |
 |---|---|---|
@@ -61,8 +61,8 @@ Audio Analyzer 自有源码基于 [MIT License](LICENSE) 发布。FFmpeg 和其�
 
 ## 完整 PCM/WAV 分块分析（开发中）
 
-v0.2.0-alpha.2 已将 RAW PCM 与 PCM WAV 从 3 秒预览升级为**全文件 Peak/RMS 与完整时域波形概览**，并支持指定起始时间的 4096 点 FFT。压缩格式仍为前三秒预览；旧版 v0.2.0-alpha.1 仍保持旧限制。技术实现、计算语义及性能限制参见 [完整 PCM 分析文档](docs/full-file-pcm.md)。
+v0.2.0-alpha.3 已将 RAW PCM 与 PCM WAV 从 3 秒预览升级为**全文件 Peak/RMS 与完整时域波形概览**，并支持指定起始时间的 4096 点 FFT。压缩格式仍为前三秒预览；旧版 v0.2.0-alpha.1 仍保持旧限制。技术实现、计算语义及性能限制参见 [完整 PCM 分析文档](docs/full-file-pcm.md)。
 
 ## 裸 PCM 智能导入（开发版）
 
-打开无头 `.pcm`、`.raw`、`.bin` 时自动尝试分析文件名与少量原始样本，给出格式/端序候选和推断说明，**所有参数仍可手动修改**。RAW PCM 不含标准采样率和声道头信息，不能保证自动识别准确。详细见 [RAW PCM 智能推断文档](docs/raw-pcm-detection.md)。此功能尚未发布到正式的 Release 安装包。
+打开无头 `.pcm`、`.raw`、`.bin` 时自动尝试分析文件名与少量原始样本，给出格式/端序候选和推断说明，**所有参数仍可手动修改**。RAW PCM 不含标准采样率和声道头信息，不能保证自动识别准确。详细见 [RAW PCM 智能推断文档](docs/raw-pcm-detection.md)。该功能从 v0.2.0-alpha.3 开始提供，原有全部字段均可手动修改。
