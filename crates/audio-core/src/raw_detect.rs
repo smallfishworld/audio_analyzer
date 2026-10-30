@@ -161,11 +161,14 @@ pub fn detect_raw_pcm(path: &Path, previous: Option<RawSpec>) -> Result<RawDetec
     let mut data=vec![0u8;PROBE_BYTES.min((bytes-proposed.byte_offset) as usize)];
     let used=f.read(&mut data).map_err(|e|e.to_string())?;
     data.truncate(used);
-    let mut candidates:Vec<_>=FORMATS.iter().filter_map(|&(fmt,endian)| {
+    // A constant byte pattern (including 0x00 and unsigned PCM's 0x80
+    // silence) has no information for deciding sample width or byte order.
+    let constant = data.first().map(|first|data.iter().all(|b|b==first)).unwrap_or(true);
+    let mut candidates:Vec<_> = if constant {Vec::new()} else {FORMATS.iter().filter_map(|&(fmt,endian)| {
         score(&data,fmt,endian=="little").map(|score|RawCandidate {
             sample_format:fmt.into(),endianness:endian.into(),score
         })
-    }).collect();
+    }).collect()};
     candidates.sort_by(|a,b|b.score.total_cmp(&a.score));
     let best=candidates.first().map(|x|x.score).unwrap_or(-10.0);
     let second=candidates.get(1).map(|x|x.score).unwrap_or(-10.0);
