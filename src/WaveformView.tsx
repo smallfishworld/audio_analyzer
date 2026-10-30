@@ -35,10 +35,11 @@ function timeText(t: number) {
 export type WaveformControls = {
   zoomIn: () => void; zoomOut: () => void; fit: () => void;
   zoomSelection: () => void; goToStart: () => void; goToEnd: () => void;
+  setCursor: (time: number) => void;
 };
 export type WaveformRange = { start: number; end: number } | null;
-type Props = { data: WaveData | null; onCursorChange?: (time: number) => void; onSelectionChange?: (range: WaveformRange) => void };
-const WaveformView = forwardRef<WaveformControls, Props>(function WaveformView({ data, onCursorChange, onSelectionChange }, ref) {
+type Props = { data: WaveData | null; playheadSec?:number|null; onCursorChange?: (time: number) => void; onSelectionChange?: (range: WaveformRange) => void };
+const WaveformView = forwardRef<WaveformControls, Props>(function WaveformView({ data, playheadSec, onCursorChange, onSelectionChange }, ref) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const overview = useRef<HTMLCanvasElement>(null);
   const navDrag = useRef(false);
@@ -194,12 +195,17 @@ const WaveformView = forwardRef<WaveformControls, Props>(function WaveformView({
       ctx.beginPath(); ctx.moveTo(x, TOP); ctx.lineTo(x, HEIGHT - BOTTOM);
       ctx.strokeStyle = "#ffd174"; ctx.lineWidth = 1.4; ctx.stroke();
     }
+    if (playheadSec!=null && playheadSec>=view.start && playheadSec<=view.end) {
+      const x=xForTime(playheadSec);
+      ctx.beginPath();ctx.moveTo(x,TOP);ctx.lineTo(x,HEIGHT-BOTTOM);
+      ctx.strokeStyle="#ff8c6a";ctx.lineWidth=2;ctx.stroke();
+    }
     ctx.restore();
     if (data?.previewLimited) {
       ctx.fillStyle = "#d5b37c"; ctx.textAlign = "right";
       ctx.fillText("PREVIEW ONLY", width - RIGHT - 4, TOP + 12);
     }
-  }, [data, points, view, selection, cursor, width, duration, xForTime]);
+  }, [data, points, view, selection, cursor, width, duration, xForTime, playheadSec]);
 
   // Native non-passive handler allows wheel zoom without scrolling the entire page.
   // React's delegated wheel listeners can be passive in Chromium-based WebViews.
@@ -258,6 +264,10 @@ const WaveformView = forwardRef<WaveformControls, Props>(function WaveformView({
     fit: reset, zoomSelection,
     goToStart: () => { setCursor(0); onCursorChange?.(0); moveViewportTo(0); },
     goToEnd: () => { setCursor(duration); onCursorChange?.(duration); moveViewportTo(duration); },
+    setCursor: (time:number) => {
+      const t=clamp(time,0,duration);
+      setCursor(t);onCursorChange?.(t);moveViewportTo(t);
+    },
   }));
   function navTime(e: ReactPointerEvent<HTMLDivElement>) {
     const bounds=e.currentTarget.getBoundingClientRect();

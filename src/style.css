@@ -153,3 +153,19 @@ body{min-width:760px;overflow:hidden}
   .ws-brand{min-width:140px}
   .ws-top-actions kbd{display:none}
 }
+
+/* P1/P2 analysis instrumentation and read-only audition */
+.ws-editor-tools select{padding:5px;color:#dff3f5;border:1px solid #42576a;border-radius:3px;background:#101c29;font-size:11px}
+.ws-transport button.ws-active{border-color:#55d6be;background:#224a48;color:#85ffdd}
+.ws-transport button:disabled{opacity:.35}
+.ws-spectrogram{margin:9px 0;background:#14202c;border:1px solid #33485a;border-radius:5px;overflow:hidden}
+.spectrogram-layout{display:flex;gap:5px;padding:9px 10px 0}
+.spectrogram-axis{display:flex;flex-direction:column;justify-content:space-between;width:34px;flex-shrink:0;font-size:10px;color:#92a9b9;text-align:right}
+.spectrogram-layout canvas{min-width:0;cursor:crosshair;border:1px solid #456073}
+.spectrogram-footer{display:flex;justify-content:space-between;gap:8px;padding:7px 10px 10px;font-size:10px;color:#89a8b9}
+.spectrum-peaks{padding:2px 11px 10px;display:flex;flex-direction:column;gap:5px}
+.spectrum-peaks>strong{color:#cbe4e9;font-size:11px}
+.spectrum-peaks button{display:flex;justify-content:space-between;text-align:left;color:#c9edf0;border:1px solid #355266;background:#1f3342;border-radius:4px;padding:6px 9px;font-size:11px}
+.spectrum-peaks button:hover{background:#285369}
+.spectrum-peaks button span,.spectrum-peaks small{color:#8eacbd}
+.ws-editor-tools .error{max-width:100%;color:#ffb39c;padding:6px;font-size:11px}

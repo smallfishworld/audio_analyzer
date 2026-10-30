@@ -35,10 +35,29 @@ async fn detect_raw_pcm(path:String,previous:Option<RawSpec>)->Result<audio_core
 fn probe_ffmpeg()->String{
     audio_core::ffmpeg::availability()
 }
+
+#[tauri::command]
+async fn analyze_range(path:String,raw_spec:Option<RawSpec>,channel_index:usize,
+        start_sec:f64,duration_sec:f64,fft_size:usize,window_name:String)
+        ->Result<audio_core::advanced::Detail,String>{
+    tauri::async_runtime::spawn_blocking(move ||
+        audio_core::advanced::analyze_range(Path::new(&path),raw_spec.as_ref(),
+            channel_index,start_sec,duration_sec,fft_size,&window_name)
+    ).await.map_err(|e|format!("Analysis task failed: {e}"))?
+}
+#[tauri::command]
+async fn audio_chunk(path:String,raw_spec:Option<RawSpec>,channel_index:usize,
+        start_sec:f64,duration_sec:f64)->Result<audio_core::advanced::AudioChunk,String>{
+    tauri::async_runtime::spawn_blocking(move ||
+        audio_core::advanced::audio_chunk(Path::new(&path),raw_spec.as_ref(),
+            channel_index,start_sec,duration_sec)
+    ).await.map_err(|e|format!("Playback task failed: {e}"))?
+}
+
 pub fn run(){
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![analyze_demo,analyze_file,detect_raw_pcm,probe_ffmpeg])
+        .invoke_handler(tauri::generate_handler![analyze_demo,analyze_file,detect_raw_pcm,probe_ffmpeg,analyze_range,audio_chunk])
         .run(tauri::generate_context!())
         .expect("unable to start Audio Analyzer");
 }

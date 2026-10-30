@@ -2,6 +2,7 @@ pub mod ffmpeg;
 mod process;
 mod streaming;
 pub mod raw_detect;
+pub mod advanced;
 pub use ffmpeg::AudioMetadata;
 use realfft::RealFftPlanner;
 use serde::{Deserialize, Serialize};
