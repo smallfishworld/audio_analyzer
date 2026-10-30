@@ -34,3 +34,17 @@
 .raw-candidate{border:1px solid #41627c;border-radius:7px;background:#1b344b;color:#d7e9f6;padding:7px 9px;font-size:10px}
 .raw-candidate:hover{border-color:#70c8d9;background:#24475d}
 .dialog:has(.raw-detection) .form{margin:15px 0}
+
+/* Audition-like editor hierarchy: waveform is the primary full-width timeline. */
+.charts{grid-template-columns:minmax(0,1fr)}
+.waveform-editor{padding:15px 18px 12px}
+.waveform-header{margin-bottom:12px}
+.wave-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.wave-actions button{display:flex;align-items:center;justify-content:center;gap:5px;min-width:33px;height:30px;border:1px solid #36546b;color:#a8dce5;background:#152a3c;border-radius:6px;padding:5px 9px;font-size:11px}
+.wave-actions button:hover:not(:disabled){border-color:#58b7c4;color:#ecfbff;background:#234659}
+.wave-actions button:disabled{opacity:.4;cursor:default}
+.wave-canvas-wrap{width:100%;background:#091522;border:1px solid #30495f;border-radius:8px;overflow:hidden;min-height:320px}
+.wave-canvas-wrap canvas{display:block;touch-action:none;cursor:crosshair}
+.wave-status{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px 20px;color:#7fa9b8;font-size:11px;padding:12px 3px 0}
+.wave-status span:last-child{color:#6d8299}
+@media(max-width:1150px){.waveform-header{align-items:flex-start;flex-wrap:wrap;gap:12px}}
