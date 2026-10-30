@@ -1,8 +1,11 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { Maximize2, ZoomIn, ZoomOut, Crosshair } from "lucide-react";
+import { Maximize2, ZoomIn, ZoomOut, Crosshair, Activity } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 
 type EnvelopePoint = { timeSec: number; min: number; max: number };
+type RawSpec = { sampleRateHz:number; channels:number; sampleFormat:string; endianness:string; byteOffset:number; layout:"interleaved"|"planar" };
+type AudioChunk = { startSec:number; sampleRateHz:number; samples:number[] };
 type WaveData = {
   waveform: EnvelopePoint[];
   sampleRateHz: number;
@@ -35,11 +38,11 @@ function timeText(t: number) {
 export type WaveformControls = {
   zoomIn: () => void; zoomOut: () => void; fit: () => void;
   zoomSelection: () => void; goToStart: () => void; goToEnd: () => void;
-  setCursor: (time: number) => void;
+  setCursor: (time: number) => void; zoomSamples: () => void;
 };
 export type WaveformRange = { start: number; end: number } | null;
-type Props = { data: WaveData | null; playheadSec?:number|null; onCursorChange?: (time: number) => void; onSelectionChange?: (range: WaveformRange) => void };
-const WaveformView = forwardRef<WaveformControls, Props>(function WaveformView({ data, playheadSec, onCursorChange, onSelectionChange }, ref) {
+type Props = { data: WaveData | null; sourcePath?:string|null; rawSpec?:RawSpec|null; playheadSec?:number|null; onCursorChange?: (time: number) => void; onSelectionChange?: (range: WaveformRange) => void };
+const WaveformView = forwardRef<WaveformControls, Props>(function WaveformView({ data, sourcePath, rawSpec, playheadSec, onCursorChange, onSelectionChange }, ref) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const overview = useRef<HTMLCanvasElement>(null);
   const navDrag = useRef(false);
@@ -50,14 +53,49 @@ const WaveformView = forwardRef<WaveformControls, Props>(function WaveformView({
   const [selection, setSelection] = useState<Range | null>(null);
   const [cursor, setCursor] = useState<number | null>(null);
   const [width, setWidth] = useState(600);
+  const [chunk, setChunk] = useState<AudioChunk | null>(null);
+  const [chunkLoading, setChunkLoading] = useState(false);
   const points = data?.waveform ?? [];
+  const maxSampleSpan = data ? Math.min(2, 65536 / data.sampleRateHz) : 0;
+  const sampleRequested = !!data && !!sourcePath && view.end - view.start <= maxSampleSpan;
   useEffect(() => {
-    setView({ start: 0, end: duration });
+    // A steady full-scale tone looks like a solid block at full-file resolution.
+    // Open a short true-sample viewport while retaining the entire clip above.
+    const dense = !!sourcePath && !!data && duration > 2 && points.length >= 128 &&
+      points.filter(p => p.min < -0.8 && p.max > 0.8).length / points.length > 0.90;
+    const focusSpan = dense && data
+      ? Math.min(duration, Math.max(256 / data.sampleRateHz, 0.016))
+      : duration;
+    setView({ start: 0, end: focusSpan });
     setSelection(null);
     setCursor(null);
     onCursorChange?.(0);
     onSelectionChange?.(null);
-  }, [data, duration]);
+  }, [data, duration, sourcePath]);
+  useEffect(() => {
+    let valid=true;
+    setChunk(null);
+    if (!sampleRequested || !data || !sourcePath) {
+      setChunkLoading(false);
+      return () => {valid=false;};
+    }
+    setChunkLoading(true);
+    // Avoid dozens of file reads while the user is spinning the zoom wheel.
+    const timer=window.setTimeout(()=>{
+      const span=Math.min(view.end-view.start, duration-view.start);
+      if(span<=0){setChunkLoading(false);return;}
+      void invoke<AudioChunk>("audio_chunk",{
+        path:sourcePath,rawSpec:rawSpec??null,channelIndex:data.selectedChannel,
+        startSec:view.start,durationSec:span
+      }).then(result=>{
+        if(valid && result.sampleRateHz===data.sampleRateHz) setChunk(result);
+      }).catch(()=>{
+        // Preserve the existing overview, but never stretch its coarse buckets
+        // into a fake sample trace if local loading fails.
+      }).finally(()=>{if(valid)setChunkLoading(false);});
+    },85);
+    return ()=>{valid=false;window.clearTimeout(timer);};
+  },[sampleRequested,sourcePath,rawSpec,data?.selectedChannel,data?.sampleRateHz,view.start,view.end,duration]);
   useEffect(() => {
     if (!wrap.current) return;
     const obs = new ResizeObserver(entries => {
@@ -83,16 +121,20 @@ const WaveformView = forwardRef<WaveformControls, Props>(function WaveformView({
     ctx.strokeStyle="#446477"; ctx.lineWidth=1;
     ctx.beginPath();ctx.moveTo(0,26);ctx.lineTo(width,26);ctx.stroke();
     if (!points.length) return;
-    ctx.fillStyle="#43bfc1";
+    ctx.strokeStyle="rgba(67,191,193,.48)";
+    ctx.lineWidth=1;
     const w = Math.max(1,width);
     for (let i=0;i<points.length;i++) {
       const pt=points[i];
       if (!Number.isFinite(pt.min)||!Number.isFinite(pt.max)||!Number.isFinite(pt.timeSec)) continue;
       const x=Math.floor(pt.timeSec/duration*w);
-      const next=i+1<points.length ? Math.ceil(points[i+1].timeSec/duration*w) : w;
+      // Full overview only: do not stretch min/max buckets across the sample plot.
       const top=26-clamp(pt.max,-1,1)*22;
       const bottom=26-clamp(pt.min,-1,1)*22;
-      ctx.fillRect(x,Math.min(top,bottom),Math.max(1,next-x),Math.max(1,Math.abs(bottom-top)));
+      ctx.beginPath();
+      ctx.moveTo(Math.min(w,x)+0.5,top);
+      ctx.lineTo(Math.min(w,x)+0.5,bottom);
+      ctx.stroke();
     }
   },[points,duration,width]);
   const xForTime = useCallback((t: number) =>
@@ -106,9 +148,7 @@ const WaveformView = forwardRef<WaveformControls, Props>(function WaveformView({
   const zoom = useCallback((factor: number, focus: number) => {
     if (!data || points.length === 0) return;
     const current = view.end - view.start;
-    // Only an envelope is cached. Limit zoom to useful overview resolution:
-    // do not claim to provide sample-level detail from these buckets.
-    const minSpan = Math.max(duration / 12, 1 / data.sampleRateHz);
+    const minSpan = Math.min(duration, 8 / data.sampleRateHz);
     const span = clamp(current * factor, minSpan, duration);
     const proportion = clamp((focus - view.start) / Math.max(current, 1e-12), 0, 1);
     const start = clamp(focus - span * proportion, 0, Math.max(0, duration - span));
@@ -158,29 +198,81 @@ const WaveformView = forwardRef<WaveformControls, Props>(function WaveformView({
         LEFT + plotW / 2, centerY);
       return;
     }
-    // The Rust service already computed min/max envelope buckets. Plot each bucket
-    // as its own vertical peak line instead of joining mins/maxes into flat rails.
     ctx.save();
     ctx.beginPath();
     ctx.rect(LEFT, TOP, plotW, plotH);
     ctx.clip();
-    const bucketSeconds = duration / Math.max(points.length, 1);
-    ctx.fillStyle = "#45d6d8";
-    ctx.strokeStyle = "#45d6d8";
-    for (let i = 0; i < points.length; i++) {
-      const p = points[i];
-      if (!Number.isFinite(p.timeSec) || !Number.isFinite(p.min) || !Number.isFinite(p.max)) continue;
-      const begin = p.timeSec;
-      const next = i + 1 < points.length ? points[i + 1].timeSec : Math.min(duration, begin + bucketSeconds);
-      if (next < view.start || begin > view.end) continue;
-      const x = xForTime(begin);
-      const nextX = xForTime(next);
-      const yMin = centerY - clamp(p.min, -1.15, 1.15) * scaleY;
-      const yMax = centerY - clamp(p.max, -1.15, 1.15) * scaleY;
-      const yTop = Math.min(yMin, yMax);
-      const h = Math.max(1, Math.abs(yMax - yMin));
-      const w = Math.max(1, nextX - x);
-      ctx.fillRect(x, yTop, w, h);
+    const samples=chunk?.samples ?? [];
+    const usableSamples=sampleRequested && chunk && samples.length>1;
+    if (usableSamples && chunk) {
+      const sampleRate=chunk.sampleRateHz;
+      // Rust seeks to an integer frame. The requested time is not always on
+      // an exact sample boundary, so align the plotted samples explicitly.
+      const sampleStart=Math.floor(chunk.startSec*sampleRate)/sampleRate;
+      const first=Math.max(0,Math.floor((view.start-sampleStart)*sampleRate));
+      const last=Math.min(samples.length,Math.ceil((view.end-sampleStart)*sampleRate));
+      if(last-first <= plotW*3) {
+        // True time-domain polyline; at 4 kHz/32 kHz this displays eight
+        // individual samples per period instead of the 60-second min/max block.
+        ctx.beginPath();
+        for(let i=first;i<last;i++) {
+          const x=xForTime(sampleStart+i/sampleRate);
+          const y=centerY-clamp(samples[i],-1.1,1.1)*scaleY;
+          if(i===first)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+        }
+        ctx.strokeStyle="#61ede3";ctx.lineWidth=1.45;ctx.stroke();
+        if(last-first<1300 && (plotW/(last-first))>4) {
+          ctx.fillStyle="#e5fffb";
+          for(let i=first;i<last;i++) {
+            const x=xForTime(sampleStart+i/sampleRate);
+            const y=centerY-clamp(samples[i],-1.1,1.1)*scaleY;
+            ctx.beginPath();ctx.arc(x,y,2,0,Math.PI*2);ctx.fill();
+          }
+        }
+      } else {
+        // Moderate zoom: min/max aggregated into one column, never a
+        // repeatedly stretched 50 ms overview bucket.
+        const buckets=Math.max(1,Math.floor(plotW));
+        const mins=new Float32Array(buckets).fill(Number.POSITIVE_INFINITY);
+        const maxs=new Float32Array(buckets).fill(Number.NEGATIVE_INFINITY);
+        for(let i=first;i<last;i++){
+          const x=Math.floor((sampleStart+i/sampleRate-view.start)/(view.end-view.start)*plotW);
+          if(x<0||x>=buckets)continue;
+          mins[x]=Math.min(mins[x],samples[i]);
+          maxs[x]=Math.max(maxs[x],samples[i]);
+        }
+        ctx.strokeStyle="rgba(82,224,218,.62)";ctx.lineWidth=1;
+        ctx.beginPath();
+        for(let i=0;i<buckets;i++){
+          if(!Number.isFinite(mins[i])||!Number.isFinite(maxs[i]))continue;
+          ctx.moveTo(LEFT+i+.5,centerY-maxs[i]*scaleY);
+          ctx.lineTo(LEFT+i+.5,centerY-mins[i]*scaleY);
+        }
+        ctx.stroke();
+      }
+    } else if(!sampleRequested) {
+      // Global min/max is a density overview, NOT a reconstructed wave.
+      // Low-opacity strokes prevent an opaque turquoise solid when each
+      // pixel contains hundreds of complete high-frequency cycles.
+      ctx.strokeStyle="rgba(62,185,185,.27)";
+      ctx.lineWidth=1;
+      ctx.beginPath();
+      for(let i=0;i<points.length;i++){
+        const p=points[i];
+        if(!Number.isFinite(p.timeSec)||!Number.isFinite(p.min)||!Number.isFinite(p.max))continue;
+        if(p.timeSec<view.start || p.timeSec>view.end)continue;
+        const x=xForTime(p.timeSec)+0.5;
+        ctx.moveTo(x,centerY-clamp(p.max,-1.1,1.1)*scaleY);
+        ctx.lineTo(x,centerY-clamp(p.min,-1.1,1.1)*scaleY);
+      }
+      ctx.stroke();
+      ctx.fillStyle="#b6d4dc";ctx.font="11px system-ui, sans-serif";ctx.textAlign="center";
+      if (view.end-view.start>2 && data?.sampleRateHz && view.end-view.start>256/data.sampleRateHz) {
+        ctx.fillText("Dense overview · click Samples for the real waveform",LEFT+plotW/2,TOP+14);
+      }
+    } else {
+      ctx.fillStyle="#9bbccc";ctx.font="11px system-ui, sans-serif";ctx.textAlign="center";
+      ctx.fillText(chunkLoading?"Loading raw samples…":"Sample detail unavailable",LEFT+plotW/2,centerY);
     }
     if (selection) {
       const a = xForTime(Math.min(selection.start, selection.end));
@@ -205,7 +297,7 @@ const WaveformView = forwardRef<WaveformControls, Props>(function WaveformView({
       ctx.fillStyle = "#d5b37c"; ctx.textAlign = "right";
       ctx.fillText("PREVIEW ONLY", width - RIGHT - 4, TOP + 12);
     }
-  }, [data, points, view, selection, cursor, width, duration, xForTime, playheadSec]);
+  }, [data, points, view, selection, cursor, width, duration, xForTime, playheadSec, chunk, sampleRequested, chunkLoading]);
 
   // Native non-passive handler allows wheel zoom without scrolling the entire page.
   // React's delegated wheel listeners can be passive in Chromium-based WebViews.
@@ -246,7 +338,7 @@ const WaveformView = forwardRef<WaveformControls, Props>(function WaveformView({
   const selectSpan = selection ? Math.abs(selection.end - selection.start) : 0;
   const zoomSelection = () => {
     if (!selection || selectSpan === 0 || !data) return;
-    const minSpan = Math.max(duration / 12, 1 / data.sampleRateHz);
+    const minSpan = Math.min(duration, 8 / data.sampleRateHz);
     const span = Math.min(duration, Math.max(selectSpan, minSpan));
     const start = clamp(Math.min(selection.start, selection.end), 0, duration - span);
     setView({ start, end: start + span });
@@ -258,10 +350,17 @@ const WaveformView = forwardRef<WaveformControls, Props>(function WaveformView({
     setSelection(null);
     onSelectionChange?.(null);
   };
+  const zoomSamples = () => {
+    if(!data || !sourcePath)return;
+    const span=Math.min(duration,Math.max(256/data.sampleRateHz,0.016));
+    const focus=cursor ?? Math.min(duration/2,(view.start+view.end)/2);
+    const start=clamp(focus-span/2,0,Math.max(0,duration-span));
+    setView({start,end:start+span});
+  };
   useImperativeHandle(ref, () => ({
     zoomIn: () => zoom(0.5,(view.start+view.end)/2),
     zoomOut: () => zoom(2,(view.start+view.end)/2),
-    fit: reset, zoomSelection,
+    fit: reset, zoomSelection, zoomSamples,
     goToStart: () => { setCursor(0); onCursorChange?.(0); moveViewportTo(0); },
     goToEnd: () => { setCursor(duration); onCursorChange?.(duration); moveViewportTo(duration); },
     setCursor: (time:number) => {
@@ -283,8 +382,10 @@ const WaveformView = forwardRef<WaveformControls, Props>(function WaveformView({
   }
   return <section className="chart-card waveform-editor">
     <div className="chart-header waveform-header">
-      <div><small>01 / WAVEFORM EDITOR</small><h2>Waveform · CH{(data?.selectedChannel ?? 0) + 1}</h2></div>
+      <div><small>01 / WAVEFORM VIEWER</small><h2>Waveform · CH{(data?.selectedChannel ?? 0) + 1}</h2></div>
       <div className="wave-actions">
+        <button type="button" title="Zoom to individual sample frames" aria-label="Show sample detail"
+          disabled={!data||!sourcePath} onClick={zoomSamples}><Activity size={15}/> Samples</button>
         <button type="button" title="Zoom into selected time range" disabled={!selectSpan}
           onClick={zoomSelection}><ZoomIn size={15}/> Selection</button>
         <button type="button" title="Zoom in" onClick={() => zoom(0.5, (view.start + view.end) / 2)}
@@ -331,7 +432,7 @@ const WaveformView = forwardRef<WaveformControls, Props>(function WaveformView({
     <div className="wave-status">
       <span>View: {timeText(view.start)} – {timeText(view.end)}</span>
       <span>{selection && selectSpan > 0 ? "Selection: " + timeText(selectSpan) : "Drag to select · Wheel to zoom · Double-click to fit"}</span>
-      <span>Min/max envelope · overview resolution</span>
+      <span>{sampleRequested ? (chunk?"RAW SAMPLES · "+chunk.samples.length.toLocaleString()+" frames":chunkLoading?"Loading samples…":"Samples unavailable") : "MIN/MAX OVERVIEW · zoom for samples"}</span>
     </div>
   </section>;
 });
