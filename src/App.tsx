@@ -152,6 +152,7 @@ export default function App() {
         </select>
       </label>}
       <span className="ready">{busy ? "ANALYZING" : "READY"}</span></div>
+    <WaveformView data={data}/>
     <div className="metrics">
       <div className="metric"><small><Gauge size={17}/> SAMPLE PEAK</small><strong>{db(data?.peakDbfs)} <span>dBFS</span></strong><p>Digital full scale</p></div>
       <div className="metric"><small><Activity size={17}/> RMS LEVEL</small><strong>{db(data?.rmsDbfs)} <span>dBFS</span></strong><p>{data && !data.previewLimited && data.metadata ? "Full selected channel" : "Preview samples only"}</p></div>
@@ -170,7 +171,7 @@ export default function App() {
         <button className="secondary-btn" disabled={busy}
           onClick={() => void analyze(path, /\.(pcm|raw|bin)$/i.test(path) ? raw : null, data.selectedChannel, fftStartSec)}>Update FFT</button>
       </div>}
-    <div className="charts"><WaveformView data={data}/><Chart title="FFT Spectrum · dBFS" kind="fft" data={data}/></div>
+    <div className="charts"><Chart title="FFT Spectrum · dBFS" kind="fft" data={data}/></div>
     <footer><span>● {data ? data.analyzedFrames.toLocaleString() + " frames" + (data.previewLimited ? " · PREVIEW ONLY" : " · FULL-FILE SCAN") : "Awaiting input"}</span><span>{ffmpeg} · M1 PREVIEW</span></footer>
   </div></main>
   {importRaw && <div className="overlay"><div className="dialog"><h2>Import raw PCM</h2>
