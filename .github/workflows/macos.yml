@@ -55,8 +55,17 @@ jobs:
         run: node scripts/verify-bundled-ffmpeg.mjs
       - name: Validate native Rust app
         run: cargo check --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }}
-      - name: Build macOS application and DMG
-        run: npm run tauri build -- --target ${{ matrix.target }} --bundles app,dmg
+      - name: Build signed native .app (no DMG mount operations)
+        run: npm run tauri build -- --target ${{ matrix.target }} --bundles app
+      - name: Create DMG with bounded hdiutil retries
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="src-tauri/target/${{ matrix.target }}/release/bundle"
+          APP="$(find "$BASE/macos" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          test -n "$APP"
+          mkdir -p "$BASE/dmg"
+          bash scripts/package-macos-dmg.sh "$APP" "$BASE/dmg/Audio_Analyzer_0.2.0-alpha.1_${{ matrix.target }}.dmg"
       - name: Verify macOS bundles and ad-hoc signature
         shell: bash
         run: |
