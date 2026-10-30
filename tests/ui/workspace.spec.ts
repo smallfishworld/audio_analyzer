@@ -33,16 +33,28 @@ test.beforeEach(async ({ page }) => {
             peakDbfs:-0.2,rmsDbfs:-3.01,
             spectrum,peaks:[{frequencyHz:4000,dbfs:-1.2}],
             spectrogram:{startSec:0,endSec:2,nyquistHz:16000,
-              columns:Array.from({length:64},(_,x)=>Array.from({length:256},(_,y)=>-110+110*Math.exp(-Math.pow((y-64-x/4)/15,2))))}
+              columns:Array.from({length:64},(_,x)=>Array.from({length:256},(_,y)=>
+                localStorage.getItem("fixture_dense_waveform")==="yes"
+                  ? y===64?0:-115
+                  : -110+110*Math.exp(-Math.pow((y-64-x/4)/15,2))))}
           };
         }
         if(command==="audio_chunk")return {startSec:args?.startSec??0,sampleRateHz:32000,
-          samples:Array.from({length:4800},(_,i)=>0.1*Math.sin(i/10))};
+          samples:Array.from({length:8192},(_,i)=>
+            localStorage.getItem("fixture_dense_waveform")==="yes"
+              ? Math.sin(2*Math.PI*4000*i/32000)
+              : 0.1*Math.sin(i/10))};
         if (command === "probe_ffmpeg") return "Bundled FFmpeg OK";
         if (command === "analyze_demo") return snapshot("Demo signal");
         if (command === "plugin:dialog|open") return "/tmp/long_stereo.wav";
         if (command === "analyze_file") return {
           ...snapshot("long_stereo.wav"),
+          ...(localStorage.getItem("fixture_dense_waveform")==="yes" ? {
+            name:"test_4kHz_0dB.wav",
+            analyzedFrames:1920000,
+            waveform:Array.from({length:1200},(_,i)=>({timeSec:i*0.05,min:-1,max:1})),
+            metadata:{...snapshot("long_stereo.wav").metadata,durationSeconds:60}
+          } : {}),
           selectedChannel: (args?.channelIndex as number) ?? 0,
           fftWindowStartSec: (args?.windowStartSec as number) ?? 0,
         };
@@ -110,8 +122,8 @@ test("waveform draws actual envelope pixels and narrow inspector remains operabl
     const {data}=ctx.getImageData(0,0,element.width,element.height);
     let count=0;
     for(let i=0;i<data.length;i+=4) {
-      // Detect the filled aqua min/max envelope, not just the background/grid.
-      if(data[i]<150 && data[i+1]>155 && data[i+2]>155) count++;
+      // Detect visible turquoise sample/envelope strokes, not a solid fill.
+      if(data[i+1]>65 && data[i+1]-data[i]>25 && data[i+2]-data[i]>30)count++;
     }
     return count;
   });
@@ -150,4 +162,48 @@ test("P2 read-only audition supports play, pause and stop",async ({page})=>{
   await expect(page.getByRole("button",{name:"Play audio"})).toBeVisible();
   await page.getByRole("button",{name:"Stop playback"}).click();
   await expect(page.getByText("Playhead", {exact:false})).toBeVisible();
+});
+
+test("60-second 4kHz PCM uses real sample cycles instead of a filled rectangle",async ({page})=>{
+  await page.evaluate(()=>localStorage.setItem("fixture_dense_waveform","yes"));
+  await page.getByRole("button",{name:/Open Ctrl|Open ⌘/}).click();
+  await expect(page.getByRole("heading",{name:"Waveform · CH1"})).toBeVisible();
+  await expect(page.getByText(/RAW SAMPLES ·/)).toBeVisible();
+  const nav=page.locator(".wave-navigator-viewport");
+  expect((await nav.boundingBox())!.width).toBeLessThan(10);
+  const canvas=page.locator(".wave-canvas-wrap canvas");
+  const colored=await canvas.evaluate(element=>{
+    const el=element as HTMLCanvasElement;
+    const data=el.getContext("2d")!.getImageData(0,0,el.width,el.height).data;
+    let count=0;
+    for(let i=0;i<data.length;i+=4){
+      if(data[i+1]>150 && data[i+2]>150 && data[i+1]>data[i]+25)count++;
+    }
+    return {count,area:el.width*el.height};
+  });
+  expect(colored.count).toBeGreaterThan(1200);
+  expect(colored.count/colored.area).toBeLessThan(0.35);
+  await page.getByRole("button",{name:"Fit entire file"}).click();
+  await expect(page.getByText(/MIN\/MAX OVERVIEW/)).toBeVisible();
+  await page.getByRole("button",{name:"Show sample detail"}).first().click();
+  await expect(page.getByText(/RAW SAMPLES ·/)).toBeVisible();
+});
+
+test("4kHz pure tone STFT is a bright ridge on a dark floor",async ({page})=>{
+  await page.evaluate(()=>localStorage.setItem("fixture_dense_waveform","yes"));
+  await page.getByRole("button",{name:/Open Ctrl|Open ⌘/}).click();
+  const canvas=page.getByRole("img",{name:"STFT time frequency spectrogram"});
+  await expect(canvas).toBeVisible();
+  const colors=await canvas.evaluate(node=>{
+    const el=node as HTMLCanvasElement;
+    const {data}=el.getContext("2d")!.getImageData(0,0,el.width,el.height);
+    let dark=0,bright=0;
+    for(let i=0;i<data.length;i+=4){
+      if(data[i]<40 && data[i+1]<45 && data[i+2]<60)dark++;
+      if(data[i]>225 && data[i+1]>130 && data[i+2]>60)bright++;
+    }
+    return {dark,bright,total:el.width*el.height};
+  });
+  expect(colors.dark/colors.total).toBeGreaterThan(0.90);
+  expect(colors.bright).toBeGreaterThan(0);
 });
