@@ -2,9 +2,9 @@
 
 **免费、开源、离线优先的音频分析桌面应用。** 采用 Tauri 2、React、Rust 与 FFmpeg。借鉴 Adobe Audition 的波形和频谱分析交互，**只读分析，不支持编辑、混音、音频效果器或录音**。
 
-## 第一版预览版
+## 最新预览版（波形与时频谱修复）
 
-统一预览版本 **v0.1.0-preview.1**。下载安装包请查看 [GitHub Releases](https://github.com/smallfishworld/audio_analyzer/releases)。新版本的安装包只在 Windows/macOS 双架构 CI 全部成功后才发布。旧 alpha.1～alpha.5 的 Releases 将从发布列表中删除。
+最新预览版本 **v0.1.0-preview.2**（修复 60 秒纯音波形实心块、STFT 深蓝背景、时频图裁剪及错误谱峰）。下载安装包请查看 [GitHub Releases](https://github.com/smallfishworld/audio_analyzer/releases)。新版本的安装包只在 Windows/macOS 双架构 CI 全部成功后才发布。旧 alpha.1～alpha.5 已从 Releases 清理；原始 `v0.1.0-preview.1` 仅保留作为历史预览，新版本发布后请优先安装 `v0.1.0-preview.2`。
 
 | 系统 | 安装包 | 注意 |
 |---|---|---|
@@ -28,7 +28,7 @@
 
 - 高级选区分析单次最多处理 **2,097,152 帧**，超过限额需要分段选择。
 - 压缩音频的默认概览/基础测量一般仍为前 3 秒；高级选区使用独立的局部解码。
-- 波形是最多约 1200 个 min/max 时间桶的概览，未实现样本级多级 LOD 精细放大。
+- 全局概览最多约 1200 个 min/max 时间桶；近距离缩放可按需读取最多 65,536 帧真实 PCM 采样并显示周期。更大范围的多层 LOD 缓存尚未实现。
 - STFT 是有限时间/频率分辨率的热力图；所有电平为 **dBFS**（数字满幅相对电平），非 **dB SPL**（声压级）或 PSD（功率谱密度）。
 - 试听为当前选择声道的单声道输出，播放连续性及压缩格式定位精度仍需 Windows/macOS 真实声卡测试。
 - 自动化测试与打包通过不代表真实桌面 GUI 和签名/公证验收全部完成。
@@ -44,7 +44,7 @@
 
 ## 文档与许可证
 
-- [首版预览 Release Notes](docs/release-v0.1.0-preview.1.md)
+- [当前预览 Release Notes](docs/release-v0.1.0-preview.2.md)
 - [产品需求](spec.md) / [技术选型](tech.md)
 - [P1/P2 能力与验收](docs/p1-p2-verification.md)
 - [FFmpeg 许可和打包](docs/bundled-ffmpeg.md)

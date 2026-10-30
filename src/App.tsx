@@ -364,7 +364,7 @@ export default function App() {
         </section>
       </aside>}
     </div>
-    <footer className="ws-statusbar"><span>{busy?"● Analyzing…":data?"● Ready":"● No audio"} · {ffmpeg}</span><span>Waveform / Analysis workspace · v0.1.0-preview.1</span></footer>
+    <footer className="ws-statusbar"><span>{busy?"● Analyzing…":data?"● Ready":"● No audio"} · {ffmpeg}</span><span>Waveform / Analysis workspace · v0.1.0-preview.2</span></footer>
   {importRaw && <div className="overlay"><div className="dialog"><h2>Import raw PCM</h2>
     <p>Raw PCM has no header. Format detection is best-effort — check the proposed values before analysis.</p>
     <div className="raw-detection">

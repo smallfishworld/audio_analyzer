@@ -1,4 +1,4 @@
-name: Publish Audio Analyzer First Preview
+name: Publish Audio Analyzer Preview
 
 # This workflow only publishes after the two native macOS builds have PASSED.
 # It independently requires the Windows + Rust + 8-codec CI workflow for
@@ -17,7 +17,7 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main' &&
       github.event.workflow_run.conclusion == 'success' &&
-      contains(github.event.workflow_run.head_commit.message, '[release v0.1.0-preview.1]')
+      contains(github.event.workflow_run.head_commit.message, '[release v0.1.0-preview.2]')
     runs-on: ubuntu-latest
     timeout-minutes: 35
     permissions:
@@ -35,12 +35,18 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
 
-      - name: Verify first-preview release marker and prevent duplicates
+      - name: Verify preview release marker and prevent stale publication
         shell: bash
         run: |
           set -euo pipefail
-          git show -s --format=%B "$TARGET_SHA" | grep -F '[release v0.1.0-preview.1]'
-          if gh release view v0.1.0-preview.1 --repo "$REPO" >/dev/null 2>&1; then
+          git show -s --format=%B "$TARGET_SHA" | grep -F '[release v0.1.0-preview.2]'
+          # Never publish a superseded main commit after a newer push.
+          CURRENT_MAIN="$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')"
+          if [[ "$CURRENT_MAIN" != "$TARGET_SHA" ]]; then
+            echo "::error::Release source commit is no longer current main"
+            exit 1
+          fi
+          if gh release view v0.1.0-preview.2 --repo "$REPO" >/dev/null 2>&1; then
             echo "::error::Release tag already exists; refusing to overwrite artifacts"
             exit 1
           fi
@@ -101,41 +107,23 @@ jobs:
           cat release-assets/SHA256SUMS.txt
 
 
-      - name: Remove all previous Releases and associated tags
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Deletion is intentionally delayed until all three validated installers
-          # and SHA256SUMS.txt have been downloaded and generated.
-          mapfile -t OLD_TAGS < <(gh api --paginate "repos/$REPO/releases?per_page=100" --jq '.[].tag_name')
-          for tag in "${OLD_TAGS[@]}"; do
-            if [[ "$tag" == "v0.1.0-preview.1" ]]; then
-              echo "::error::First preview already exists; aborting"
-              exit 1
-            fi
-            echo "Deleting previous release and its tag: $tag"
-            gh release delete "$tag" --repo "$REPO" --yes --cleanup-tag
-          done
-          REMAINING="$(gh api "repos/$REPO/releases?per_page=100" --jq 'length')"
-          [[ "$REMAINING" == "0" ]] || { echo "::error::Old releases still exist"; exit 1; }
-
       - name: Create GitHub Pre-release with installers from the verified commit
         shell: bash
         run: |
           set -euo pipefail
-          gh release create v0.1.0-preview.1 -R "$REPO" \
+          gh release create v0.1.0-preview.2 -R "$REPO" \
             --target "$TARGET_SHA" \
-            --title "Audio Analyzer v0.1.0-preview.1 — First Public Preview" \
+            --title "Audio Analyzer v0.1.0-preview.2 — Waveform and Spectrogram Fixes" \
             --prerelease \
-            --notes-file docs/release-v0.1.0-preview.1.md \
+            --notes-file docs/release-v0.1.0-preview.2.md \
             release-assets/*.dmg release-assets/*.exe release-assets/SHA256SUMS.txt
 
       - name: Confirm published release and assets
         shell: bash
         run: |
           set -euo pipefail
-          gh release view v0.1.0-preview.1 -R "$REPO" \
+          gh release view v0.1.0-preview.2 -R "$REPO" \
             --json url,isPrerelease,assets \
             --jq '{url: .url, prerelease: .isPrerelease, assets: [.assets[].name]}'
-          ASSETS="$(gh release view v0.1.0-preview.1 -R "$REPO" --json assets --jq '.assets | length')"
+          ASSETS="$(gh release view v0.1.0-preview.2 -R "$REPO" --json assets --jq '.assets | length')"
           [[ "$ASSETS" -eq 4 ]]
