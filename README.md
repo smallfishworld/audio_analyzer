@@ -58,3 +58,7 @@ cargo test --manifest-path crates/audio-core/Cargo.toml
 ## 授权
 
 Audio Analyzer 自有源码基于 [MIT License](LICENSE) 发布。FFmpeg 和其余第三方依赖遵守各自的许可证；FFmpeg 是 LGPL-only 单独可执行程序，并随包提供对应源代码、许可文本和构建记录。具体部署还需遵守适用地区的编解码专利及软件签名要求。
+
+## 完整 PCM/WAV 分块分析（开发中）
+
+下一版本开始将 RAW PCM 与 PCM WAV 从 3 秒预览升级为**全文件 Peak/RMS 与完整时域波形概览**，并支持指定起始时间的 4096 点 FFT。压缩格式仍为前三秒预览；**当前 GitHub Release v0.2.0-alpha.1 仍不包含此功能**。技术实现、计算语义及性能限制参见 [完整 PCM 分析文档](docs/full-file-pcm.md)。
