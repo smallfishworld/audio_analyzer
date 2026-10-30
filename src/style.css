@@ -15,3 +15,22 @@
 .fft-selection input{width:108px;padding:8px;border-radius:7px;border:1px solid #44637a;background:#0d1e2b;color:#f0faff}
 .secondary-btn{background:#1b4351;color:#7de0e4;border:1px solid #427587;padding:10px 14px;border-radius:8px;font-weight:700;font-size:11px}
 .secondary-btn:disabled{opacity:.55;cursor:wait}
+
+/* PCM detection uses compact, neutral feedback; guesses never imply certainty. */
+.dialog:has(.raw-detection){max-height:min(92vh,920px);overflow:auto;width:min(560px,calc(100vw - 48px))}
+.raw-detection{padding:12px 14px;background:#112333;border:1px solid #36566a;border-radius:10px;margin-top:15px}
+.raw-detection-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.raw-detection-top strong{color:#d0eafa;font-size:12px}
+.raw-detection .secondary-btn{padding:7px 10px}
+.raw-detection-status{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:9px;color:#95aec1;font-size:11px}
+.raw-confidence{border:1px solid #496679;border-radius:6px;padding:4px 7px;color:#a6dde7}
+.raw-manual{color:#c7dcef}
+.raw-detection .raw-inferred{color:#bdd6e4;font-size:11px;margin:8px 0 2px}
+.raw-detection .raw-reason{color:#93b1c5;font-size:11px;margin:5px 0;line-height:1.4}
+.raw-detection .raw-warning{color:#f3baaf;font-size:11px;line-height:1.4}
+.raw-candidates{margin-top:9px}
+.raw-candidates small{font-size:10px;color:#8faabd}
+.raw-candidates>div{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+.raw-candidate{border:1px solid #41627c;border-radius:7px;background:#1b344b;color:#d7e9f6;padding:7px 9px;font-size:10px}
+.raw-candidate:hover{border-color:#70c8d9;background:#24475d}
+.dialog:has(.raw-detection) .form{margin:15px 0}
