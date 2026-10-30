@@ -25,6 +25,19 @@ test.beforeEach(async ({ page }) => {
     });
     (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {
       invoke: async (command: string, args?: Record<string, unknown>) => {
+        if (command === "analyze_range") {
+          const fft=(args?.fftSize as number)??4096;
+          return {
+            startSec:args?.startSec??0,endSec:((args?.startSec as number)??0)+((args?.durationSec as number)??2),
+            sampleRateHz:32000,fftSize:fft,window:args?.windowName??"hann",
+            peakDbfs:-0.2,rmsDbfs:-3.01,
+            spectrum,peaks:[{frequencyHz:4000,dbfs:-1.2}],
+            spectrogram:{startSec:0,endSec:2,nyquistHz:16000,
+              columns:Array.from({length:64},(_,x)=>Array.from({length:256},(_,y)=>-110+110*Math.exp(-Math.pow((y-64-x/4)/15,2))))}
+          };
+        }
+        if(command==="audio_chunk")return {startSec:args?.startSec??0,sampleRateHz:32000,
+          samples:Array.from({length:4800},(_,i)=>0.1*Math.sin(i/10))};
         if (command === "probe_ffmpeg") return "Bundled FFmpeg OK";
         if (command === "analyze_demo") return snapshot("Demo signal");
         if (command === "plugin:dialog|open") return "/tmp/long_stereo.wav";
@@ -109,4 +122,32 @@ test("waveform draws actual envelope pixels and narrow inspector remains operabl
   await expect(page.locator(".ws-inspector")).toHaveCount(0);
   await page.getByRole("button",{name:"Analysis panels"}).click();
   await expect(page.locator(".ws-inspector")).toBeVisible();
+});
+
+test("P1 spectral settings, selection peaks and P2 time-frequency navigation", async ({page}) => {
+  await page.getByRole("button", {name: /Open Ctrl|Open ⌘/}).click();
+  await expect(page.getByText("STFT", {exact:false}).first()).toBeVisible();
+  await expect(page.getByRole("img", {name:"STFT time frequency spectrogram"})).toBeVisible();
+  await page.getByLabel("FFT size").selectOption("8192");
+  await page.getByLabel("FFT window type").selectOption("blackman");
+  await page.getByRole("button", {name:"Analyze window"}).click();
+  await expect(page.getByText("FFT · blackman 8192")).toBeVisible();
+  await expect(page.getByText("Top spectral peaks")).toBeVisible();
+  await page.getByRole("button",{name:/4.000 kHz/}).click();
+  await expect(page.getByText(/Frequency cursor: 4000/)).toBeVisible();
+  const plot=page.getByRole("img",{name:"STFT time frequency spectrogram"});
+  await plot.click({position:{x:25,y:80}});
+  await expect(page.getByLabel("Cursor time")).not.toHaveValue("0");
+});
+
+test("P2 read-only audition supports play, pause and stop",async ({page})=>{
+  await page.getByRole("button", {name: /Open Ctrl|Open ⌘/}).click();
+  const play=page.getByRole("button",{name:"Play audio"});
+  await expect(play).toBeEnabled();
+  await play.click();
+  await expect(page.getByRole("button",{name:"Pause playback"})).toBeVisible();
+  await page.getByRole("button",{name:"Pause playback"}).click();
+  await expect(page.getByRole("button",{name:"Play audio"})).toBeVisible();
+  await page.getByRole("button",{name:"Stop playback"}).click();
+  await expect(page.getByText("Playhead", {exact:false})).toBeVisible();
 });
