@@ -88,3 +88,25 @@ test("open file and channel switching preserve actionable files panel", async ({
   await page.getByRole("button", { name: "Analysis panels" }).click();
   await expect(page.getByText("Frequency Analysis", { exact: true })).toBeVisible();
 });
+
+test("waveform draws actual envelope pixels and narrow inspector remains operable", async ({page}) => {
+  const colored = await page.locator(".wave-canvas-wrap canvas").evaluate((canvas) => {
+    const element=canvas as HTMLCanvasElement;
+    const ctx=element.getContext("2d");
+    if(!ctx) return 0;
+    const {data}=ctx.getImageData(0,0,element.width,element.height);
+    let count=0;
+    for(let i=0;i<data.length;i+=4) {
+      // Detect the filled aqua min/max envelope, not just the background/grid.
+      if(data[i]<150 && data[i+1]>155 && data[i+2]>155) count++;
+    }
+    return count;
+  });
+  expect(colored).toBeGreaterThan(1000);
+  await page.setViewportSize({width:900,height:700});
+  await expect(page.locator(".ws-inspector")).toBeVisible();
+  await page.getByRole("button",{name:"Analysis panels"}).click();
+  await expect(page.locator(".ws-inspector")).toHaveCount(0);
+  await page.getByRole("button",{name:"Analysis panels"}).click();
+  await expect(page.locator(".ws-inspector")).toBeVisible();
+});
