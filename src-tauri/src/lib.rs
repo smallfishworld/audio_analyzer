@@ -26,13 +26,19 @@ fn analyze_file_blocking(path:String,raw_spec:Option<RawSpec>,channel:usize,star
     }
 }
 #[tauri::command]
+async fn detect_raw_pcm(path:String,previous:Option<RawSpec>)->Result<audio_core::raw_detect::RawDetection,String>{
+    tauri::async_runtime::spawn_blocking(move || {
+        audio_core::raw_detect::detect_raw_pcm(Path::new(&path),previous)
+    }).await.map_err(|e|format!("PCM detection task failed: {e}"))?
+}
+#[tauri::command]
 fn probe_ffmpeg()->String{
     audio_core::ffmpeg::availability()
 }
 pub fn run(){
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![analyze_demo,analyze_file,probe_ffmpeg])
+        .invoke_handler(tauri::generate_handler![analyze_demo,analyze_file,detect_raw_pcm,probe_ffmpeg])
         .run(tauri::generate_context!())
         .expect("unable to start Audio Analyzer");
 }
