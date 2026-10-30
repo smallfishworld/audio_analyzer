@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { Maximize2, ZoomIn, ZoomOut } from "lucide-react";
+import { Maximize2, ZoomIn, ZoomOut, Crosshair } from "lucide-react";
 
 type EnvelopePoint = { timeSec: number; min: number; max: number };
 type WaveData = {
@@ -32,8 +32,16 @@ function timeText(t: number) {
   const s = (t % 60).toFixed(3).padStart(6, "0");
   return (h > 0 ? h + ":" + String(m).padStart(2, "0") : String(m).padStart(2, "0")) + ":" + s;
 }
-export default function WaveformView({ data }: { data: WaveData | null }) {
+export type WaveformControls = {
+  zoomIn: () => void; zoomOut: () => void; fit: () => void;
+  zoomSelection: () => void; goToStart: () => void; goToEnd: () => void;
+};
+export type WaveformRange = { start: number; end: number } | null;
+type Props = { data: WaveData | null; onCursorChange?: (time: number) => void; onSelectionChange?: (range: WaveformRange) => void };
+const WaveformView = forwardRef<WaveformControls, Props>(function WaveformView({ data, onCursorChange, onSelectionChange }, ref) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const overview = useRef<HTMLCanvasElement>(null);
+  const navDrag = useRef(false);
   const wrap = useRef<HTMLDivElement>(null);
   const dragging = useRef<number | null>(null);
   const duration = fullDuration(data);
@@ -46,6 +54,8 @@ export default function WaveformView({ data }: { data: WaveData | null }) {
     setView({ start: 0, end: duration });
     setSelection(null);
     setCursor(null);
+    onCursorChange?.(0);
+    onSelectionChange?.(null);
   }, [data, duration]);
   useEffect(() => {
     if (!wrap.current) return;
@@ -55,6 +65,35 @@ export default function WaveformView({ data }: { data: WaveData | null }) {
     obs.observe(wrap.current);
     return () => obs.disconnect();
   }, []);
+  const moveViewportTo = useCallback((time: number) => {
+    const span = view.end - view.start;
+    const start = clamp(time - span / 2, 0, Math.max(0, duration - span));
+    setView({ start, end: start + span });
+  }, [view, duration]);
+  useEffect(() => {
+    const el = overview.current;
+    if (!el) return;
+    const ratio = Math.min(window.devicePixelRatio || 1, 3);
+    el.width = Math.round(width * ratio);
+    el.height = Math.round(52 * ratio);
+    const ctx = el.getContext("2d"); if (!ctx) return;
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.fillStyle="#091522"; ctx.fillRect(0,0,width,52);
+    ctx.strokeStyle="#446477"; ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(0,26);ctx.lineTo(width,26);ctx.stroke();
+    if (!points.length) return;
+    ctx.fillStyle="#43bfc1";
+    const w = Math.max(1,width);
+    for (let i=0;i<points.length;i++) {
+      const pt=points[i];
+      if (!Number.isFinite(pt.min)||!Number.isFinite(pt.max)||!Number.isFinite(pt.timeSec)) continue;
+      const x=Math.floor(pt.timeSec/duration*w);
+      const next=i+1<points.length ? Math.ceil(points[i+1].timeSec/duration*w) : w;
+      const top=26-clamp(pt.max,-1,1)*22;
+      const bottom=26-clamp(pt.min,-1,1)*22;
+      ctx.fillRect(x,Math.min(top,bottom),Math.max(1,next-x),Math.max(1,Math.abs(bottom-top)));
+    }
+  },[points,duration,width]);
   const xForTime = useCallback((t: number) =>
     LEFT + ((t - view.start) / (view.end - view.start)) * (width - LEFT - RIGHT),
     [view, width]);
@@ -186,6 +225,7 @@ export default function WaveformView({ data }: { data: WaveData | null }) {
     dragging.current = t;
     setCursor(t);
     setSelection({ start: t, end: t });
+    onCursorChange?.(t);
     e.currentTarget.setPointerCapture(e.pointerId);
   }
   function move(e: ReactPointerEvent<HTMLCanvasElement>) {
@@ -194,6 +234,7 @@ export default function WaveformView({ data }: { data: WaveData | null }) {
   }
   function up(e: ReactPointerEvent<HTMLCanvasElement>) {
     dragging.current = null;
+    onSelectionChange?.(selection && Math.abs(selection.end-selection.start)>0 ? selection : null);
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
   }
   const selectSpan = selection ? Math.abs(selection.end - selection.start) : 0;
@@ -204,8 +245,32 @@ export default function WaveformView({ data }: { data: WaveData | null }) {
     const start = clamp(Math.min(selection.start, selection.end), 0, duration - span);
     setView({ start, end: start + span });
     setSelection(null);
+    onSelectionChange?.(null);
   };
-  const reset = () => { setView({ start: 0, end: duration }); setSelection(null); };
+  const reset = () => {
+    setView({ start: 0, end: duration });
+    setSelection(null);
+    onSelectionChange?.(null);
+  };
+  useImperativeHandle(ref, () => ({
+    zoomIn: () => zoom(0.5,(view.start+view.end)/2),
+    zoomOut: () => zoom(2,(view.start+view.end)/2),
+    fit: reset, zoomSelection,
+    goToStart: () => { setCursor(0); onCursorChange?.(0); moveViewportTo(0); },
+    goToEnd: () => { setCursor(duration); onCursorChange?.(duration); moveViewportTo(duration); },
+  }));
+  function navTime(e: ReactPointerEvent<HTMLDivElement>) {
+    const bounds=e.currentTarget.getBoundingClientRect();
+    return clamp((e.clientX-bounds.left)/Math.max(1,bounds.width)*duration,0,duration);
+  }
+  function changeSelection(which: "start"|"end", value: number) {
+    if (!Number.isFinite(value)) return;
+    const t=clamp(value,0,duration);
+    const other=selection ?? {start:t,end:t};
+    const next=which==="start" ? {start:t,end:Math.max(t,other.end)} : {start:Math.min(t,other.start),end:t};
+    setSelection(next);
+    onSelectionChange?.(next);
+  }
   return <section className="chart-card waveform-editor">
     <div className="chart-header waveform-header">
       <div><small>01 / WAVEFORM EDITOR</small><h2>Waveform · CH{(data?.selectedChannel ?? 0) + 1}</h2></div>
@@ -219,12 +284,39 @@ export default function WaveformView({ data }: { data: WaveData | null }) {
         <button type="button" title="Fit entire file" onClick={reset}><Maximize2 size={15}/></button>
       </div>
     </div>
-    <div className="wave-canvas-wrap" ref={wrap}>
+    <div className="wave-navigator" ref={wrap}>
+      <div className="wave-navigator-title"><span>Overview / navigator</span><span>{timeText(duration)}</span></div>
+      <div className="wave-overview-track" role="slider" aria-label="Navigate audio timeline" tabIndex={data ? 0 : -1}
+        aria-valuemin={0} aria-valuemax={duration} aria-valuenow={(view.start+view.end)/2}
+        onKeyDown={e => {
+          if(e.key==="ArrowLeft"||e.key==="ArrowRight") {e.preventDefault();moveViewportTo((view.start+view.end)/2+(e.key==="ArrowRight"?1:-1)*(view.end-view.start)/5);}
+        }}
+        onPointerDown={e => { if(!data)return; navDrag.current=true; e.currentTarget.setPointerCapture(e.pointerId);moveViewportTo(navTime(e)); }}
+        onPointerMove={e => { if(navDrag.current) moveViewportTo(navTime(e)); }}
+        onPointerUp={e => { navDrag.current=false; if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId); }}
+        onPointerCancel={() => {navDrag.current=false;}}>
+        <canvas ref={overview} style={{width:"100%",height:52}} aria-hidden="true"/>
+        <div className="wave-navigator-viewport" style={{left:(view.start/duration*100)+"%",width:((view.end-view.start)/duration*100)+"%"}}/>
+      </div>
+    </div>
+    <div className="wave-canvas-wrap">
       <canvas ref={canvas} style={{ width: "100%", height: HEIGHT }} role="img"
         aria-label="Waveform envelope, drag to select a time range; double-click to reset zoom"
         onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
         onDoubleClick={reset}
       />
+    </div>
+    <div className="wave-selection-view">
+      <label><Crosshair size={13}/> Cursor (s)<input aria-label="Cursor time" type="number" step="0.001" min="0" max={duration}
+        value={cursor == null ? "" : Number(cursor.toFixed(3))}
+        onChange={e=> { if(e.target.value==="")return;const t=clamp(Number(e.target.value),0,duration);setCursor(t);onCursorChange?.(t);moveViewportTo(t); }}/></label>
+      <label>Selection in (s)<input aria-label="Selection start" type="number" step="0.001" min="0" max={duration}
+        value={selection ? Number(Math.min(selection.start,selection.end).toFixed(3)) : ""}
+        onChange={e=>changeSelection("start",Number(e.target.value))}/></label>
+      <label>Selection out (s)<input aria-label="Selection end" type="number" step="0.001" min="0" max={duration}
+        value={selection ? Number(Math.max(selection.start,selection.end).toFixed(3)) : ""}
+        onChange={e=>changeSelection("end",Number(e.target.value))}/></label>
+      <span>Duration: {selection ? timeText(Math.abs(selection.end-selection.start)) : "--:--.---"}</span>
     </div>
     <div className="wave-status">
       <span>View: {timeText(view.start)} – {timeText(view.end)}</span>
@@ -232,4 +324,5 @@ export default function WaveformView({ data }: { data: WaveData | null }) {
       <span>Min/max envelope · overview resolution</span>
     </div>
   </section>;
-}
+});
+export default WaveformView;
