@@ -37,7 +37,7 @@
 
 /* Audition-like editor hierarchy: waveform is the primary full-width timeline. */
 .charts{grid-template-columns:minmax(0,1fr)}
-.waveform-editor{padding:15px 18px 12px}
+.waveform-editor{padding:15px 18px 12px;margin-bottom:18px}
 .waveform-header{margin-bottom:12px}
 .wave-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .wave-actions button{display:flex;align-items:center;justify-content:center;gap:5px;min-width:33px;height:30px;border:1px solid #36546b;color:#a8dce5;background:#152a3c;border-radius:6px;padding:5px 9px;font-size:11px}
