@@ -153,3 +153,31 @@ pub fn decode_preview_channel(path: &Path, channel: usize) -> Result<AnalysisSna
     snapshot.selected_channel = channel;
     Ok(snapshot)
 }
+
+
+/// Decode only the requested part of a local audio stream for measurement or audition.
+/// Accurate seeking is requested; timestamps of some lossy codecs may be approximate.
+pub(crate) fn decode_range(path:&Path,meta:&AudioMetadata,channel:usize,
+        start:f64,duration:f64,max_frames:usize)->Result<Vec<f64>,String>{
+    let frame_limit=(duration*meta.sample_rate_hz as f64).ceil() as usize;
+    if frame_limit>max_frames {return Err("Requested range exceeds analysis budget".into());}
+    let mut cmd=Command::new(bin("ffmpeg"));
+    cmd.args(["-nostdin","-hide_banner","-loglevel","error","-threads","1",
+        "-protocol_whitelist","file","-ss",&format!("{start:.9}"),"-i"]).arg(path)
+        .args(["-map",&format!("0:{}",meta.audio_stream_index),"-vn","-sn","-dn",
+            "-af",&format!("pan=mono|c0=c{channel}"),"-t",&format!("{duration:.9}"),
+            "-c:a","pcm_f64le","-f","f64le","pipe:1"]);
+    let out=run_bounded(&mut cmd,Duration::from_secs(40),
+        frame_limit.saturating_add(4096).saturating_mul(8),32*1024)?;
+    if !out.status.success() {
+        return Err(format!("Audio segment decode failed: {}",
+            String::from_utf8_lossy(&out.stderr).chars().take(300).collect::<String>()));
+    }
+    if out.stdout.len()%8!=0 || out.stdout.is_empty(){return Err("Empty/incomplete decoder segment".into());}
+    let mut samples=Vec::with_capacity(out.stdout.len()/8);
+    for bytes in out.stdout.chunks_exact(8) {
+        samples.push(f64::from_le_bytes(bytes.try_into().map_err(|_|"Bad float data")?));
+    }
+    samples.truncate(frame_limit);
+    Ok(samples)
+}
