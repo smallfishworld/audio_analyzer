@@ -7,7 +7,7 @@ type RawSpec = { sampleRateHz: number; channels: number; sampleFormat: string; e
 type Pt = { timeSec: number; min: number; max: number };
 type Bin = { frequencyHz: number; dbfs: number | null };
 type Metadata = { container:string; codec:string; sampleRateHz:number; channels:number; durationSeconds:number|null; bitRateBps:number|null; bitsPerSample:number|null; fileBytes:number; audioStreamIndex:number };
-type Snapshot = { metadata: Metadata | null; selectedChannel: number; name: string; sourceType: string; sampleRateHz: number; channels: number; analyzedFrames: number; previewLimited: boolean; peakDbfs: number | null; rmsDbfs: number | null; dominantFrequencyHz: number | null; waveform: Pt[]; spectrum: Bin[] };
+type Snapshot = { metadata: Metadata | null; selectedChannel: number; fftWindowStartSec: number | null; name: string; sourceType: string; sampleRateHz: number; channels: number; analyzedFrames: number; previewLimited: boolean; peakDbfs: number | null; rmsDbfs: number | null; dominantFrequencyHz: number | null; waveform: Pt[]; spectrum: Bin[] };
 const initialRaw: RawSpec = { sampleRateHz: 192000, channels: 1, sampleFormat: "s16", endianness: "little", byteOffset: 0, layout: "interleaved" };
 function db(n?: number | null) { return n == null ? "−∞" : n.toFixed(2); }
 function Chart({ title, kind, data }: { title: string; kind: "wave" | "fft"; data: Snapshot | null }) {
@@ -55,23 +55,24 @@ export default function App() {
   const [error, setError] = useState("");
   const [ffmpeg, setFfmpeg] = useState("not checked");
   const [settings, setSettings] = useState(false);
+  const [fftStartSec, setFftStartSec] = useState(0);
   const request = useRef(0);
   async function demo() {
     const token=++request.current;
     setBusy(true); setError("");
     try {
       const response=await invoke<Snapshot>("analyze_demo");
-      if (token===request.current) { setData(response); setPath(null); }
+      if (token===request.current) { setData(response); setPath(null); setFftStartSec(0); }
     } catch(e) { if (token===request.current) setError(String(e)); }
     finally { if (token===request.current) setBusy(false); }
   }
   useEffect(() => { void demo(); void invoke<string>("probe_ffmpeg").then(setFfmpeg).catch(() => setFfmpeg("unavailable")); }, []);
-  async function analyze(p: string, spec: RawSpec | null = null, channelIndex = 0) {
+  async function analyze(p: string, spec: RawSpec | null = null, channelIndex = 0, windowStartSec = 0) {
     const token=++request.current;
     setBusy(true); setError("");
     try {
-      const response=await invoke<Snapshot>("analyze_file", { path: p, rawSpec: spec, channelIndex });
-      if (token===request.current) { setData(response); setImportRaw(false); }
+      const response=await invoke<Snapshot>("analyze_file", { path: p, rawSpec: spec, channelIndex, windowStartSec });
+      if (token===request.current) { setData(response); setImportRaw(false); setFftStartSec(response.fftWindowStartSec ?? 0); }
     } catch(e) { if (token===request.current) setError(String(e)); }
     finally { if (token===request.current) setBusy(false); }
   }
@@ -79,7 +80,7 @@ export default function App() {
     try {
       const p = await open({ multiple: false, directory: false, title: "Open audio file" });
       if (typeof p !== "string") return;
-      setPath(p);
+      setPath(p); setFftStartSec(0);
       if (/\.(pcm|raw|bin)$/i.test(p)) setImportRaw(true); else await analyze(p);
     } catch(e) { setError(String(e)); }
   }
@@ -99,7 +100,7 @@ export default function App() {
   </aside><main><header className="top"><span>Workspace <ChevronRight size={13}/> <b>Signal overview</b></span><em>DESKTOP · LOCAL</em></header><div className="content">
     <div className="hero"><div><small>✧ NEXT-GEN AUDIO INSIGHTS</small><h1>Signal workspace<span>.</span></h1><p>Discover the details hidden inside every waveform.</p></div><button className="primary" onClick={() => void choose()} disabled={busy}><FolderOpen size={17}/> Open audio file</button></div>
     {error && <div className="error" role="alert">{error}<button onClick={() => setError("")}>✕</button></div>}
-    {settings && <div className="note"><strong>M1 analysis settings</strong><p>Current preview uses 4096-point Hann FFT at source sample rate. Configurable FFT, resampling and audio export are planned in M2–M3.</p></div>}
+    {settings && <div className="note"><strong>M1 analysis settings</strong><p>WAV and raw PCM use complete-file RMS, Peak and a bounded waveform overview. FFT reads 4096 frames at the selected time; compressed formats still use three-second previews. Configurable FFT and export are planned in M2–M3.</p></div>}
     <div className="file"><div className="file-icon"><Waves size={22}/></div><div><strong>{data?.name ?? "Loading…"}</strong><p>{data ? data.sourceType + " · " + (data.sampleRateHz / 1000).toFixed(1) + " kHz · " + data.channels + " ch" : ""}</p>
       {data?.metadata && <p className="metadata">Format: {data.metadata.container} · Codec: {data.metadata.codec}
       {data.metadata.bitRateBps != null ? " · " + Math.round(data.metadata.bitRateBps / 1000) + " kbps" : ""}
@@ -107,19 +108,31 @@ export default function App() {
       {data.metadata.durationSeconds != null ? " · " + data.metadata.durationSeconds.toFixed(2) + " s" : ""}</p>}</div>
       {data && data.channels > 1 && path && <label className="channel-choice">Channel
         <select aria-label="Audio channel" disabled={busy} value={data.selectedChannel}
-        onChange={e => void analyze(path, /\.(pcm|raw|bin)$/i.test(path) ? raw : null, Number(e.target.value))}>
+        onChange={e => void analyze(path, /\.(pcm|raw|bin)$/i.test(path) ? raw : null, Number(e.target.value), fftStartSec)}>
           {Array.from({ length: data.channels },(_,i)=><option key={i} value={i}>CH {i+1}</option>)}
         </select>
       </label>}
       <span className="ready">{busy ? "ANALYZING" : "READY"}</span></div>
     <div className="metrics">
       <div className="metric"><small><Gauge size={17}/> SAMPLE PEAK</small><strong>{db(data?.peakDbfs)} <span>dBFS</span></strong><p>Digital full scale</p></div>
-      <div className="metric"><small><Activity size={17}/> RMS LEVEL</small><strong>{db(data?.rmsDbfs)} <span>dBFS</span></strong><p>Preview samples only</p></div>
+      <div className="metric"><small><Activity size={17}/> RMS LEVEL</small><strong>{db(data?.rmsDbfs)} <span>dBFS</span></strong><p>{data && !data.previewLimited && data.metadata ? "Full selected channel" : "Preview samples only"}</p></div>
       <div className="metric"><small><Radio size={17}/> DOMINANT TONE</small><strong>{data?.dominantFrequencyHz == null ? "—" : (data.dominantFrequencyHz / 1000).toFixed(3)} <span>kHz</span></strong><p>FFT peak frequency bin</p></div>
       <div className="metric"><small><Waves size={17}/> SAMPLE RATE</small><strong>{data ? (data.sampleRateHz / 1000).toFixed(1) : "—"} <span>kHz</span></strong><p>Nyquist: {data ? (data.sampleRateHz / 2000).toFixed(1) + " kHz" : "—"}</p></div>
     </div>
-    <div className="charts"><Chart title="Waveform · Amplitude" kind="wave" data={data}/><Chart title="FFT Spectrum · dBFS" kind="fft" data={data}/></div>
-    <footer><span>● {data ? data.analyzedFrames.toLocaleString() + " frames" + (data.previewLimited ? " · PREVIEW ONLY" : "") : "Awaiting input"}</span><span>{ffmpeg} · M1 PREVIEW</span></footer>
+    {path && data && !data.previewLimited && ["raw","wav"].includes(data.metadata?.container ?? "") &&
+      <div className="fft-selection">
+        <div><strong>Full-file PCM analyzed</strong><p>Peak / RMS and overview cover {data.metadata?.durationSeconds?.toFixed(2)} seconds. FFT uses a 4096-frame Hann window at the selected time.</p></div>
+        <label>FFT start (s)
+          <input aria-label="FFT start time seconds" type="number" step="0.01" min="0"
+            max={Math.max(0,(data.metadata?.durationSeconds ?? 0)-4096/data.sampleRateHz).toFixed(3)}
+            value={fftStartSec} disabled={busy}
+            onChange={e => setFftStartSec(Number(e.target.value))}/>
+        </label>
+        <button className="secondary-btn" disabled={busy}
+          onClick={() => void analyze(path, /\.(pcm|raw|bin)$/i.test(path) ? raw : null, data.selectedChannel, fftStartSec)}>Update FFT</button>
+      </div>}
+    <div className="charts"><Chart title={data && !data.previewLimited && data.metadata ? "Full-file waveform · Amplitude" : "Waveform · Amplitude"} kind="wave" data={data}/><Chart title="FFT Spectrum · dBFS" kind="fft" data={data}/></div>
+    <footer><span>● {data ? data.analyzedFrames.toLocaleString() + " frames" + (data.previewLimited ? " · PREVIEW ONLY" : " · FULL-FILE SCAN") : "Awaiting input"}</span><span>{ffmpeg} · M1 PREVIEW</span></footer>
   </div></main>
   {importRaw && <div className="overlay"><div className="dialog"><h2>Import raw PCM</h2><p>Specify original capture format. Raw files have no format header.</p><div className="form">
     <label>Sample rate (Hz)<input type="number" min="1" value={raw.sampleRateHz} onChange={e => setRawValue("sampleRateHz",e.target.value)}/></label>

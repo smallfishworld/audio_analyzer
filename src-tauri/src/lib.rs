@@ -3,19 +3,19 @@ use audio_core::{RawSpec,AnalysisSnapshot};
 #[tauri::command]
 fn analyze_demo()->AnalysisSnapshot{audio_core::demo()}
 #[tauri::command]
-async fn analyze_file(path:String,raw_spec:Option<RawSpec>,channel_index:Option<usize>)->Result<AnalysisSnapshot,String>{
+async fn analyze_file(path:String,raw_spec:Option<RawSpec>,channel_index:Option<usize>,window_start_sec:Option<f64>)->Result<AnalysisSnapshot,String>{
     // Keep parsing/FFT off the webview/main command executor.
-    tauri::async_runtime::spawn_blocking(move || analyze_file_blocking(path,raw_spec,channel_index.unwrap_or(0)))
+    tauri::async_runtime::spawn_blocking(move || analyze_file_blocking(path,raw_spec,channel_index.unwrap_or(0),window_start_sec.unwrap_or(0.0)))
         .await.map_err(|e|format!("Audio task failed: {e}"))?
 }
-fn analyze_file_blocking(path:String,raw_spec:Option<RawSpec>,channel:usize)->Result<AnalysisSnapshot,String>{
+fn analyze_file_blocking(path:String,raw_spec:Option<RawSpec>,channel:usize,start_sec:f64)->Result<AnalysisSnapshot,String>{
     let p=Path::new(&path);
     if !p.is_file(){return Err("File does not exist".into());}
-    if let Some(spec)=raw_spec{return audio_core::pcm_channel(p,&spec,channel);}
+    if let Some(spec)=raw_spec{return audio_core::pcm_channel_at(p,&spec,channel,start_sec);}
     let ext=p.extension().and_then(|x|x.to_str()).unwrap_or("").to_ascii_lowercase();
     if ext=="wav" {
         // Native fast path remains available for WAV when ffmpeg is not installed.
-        match audio_core::wav_channel(p,channel) {
+        match audio_core::wav_channel_at(p,channel,start_sec) {
             Ok(result)=>Ok(result),
             Err(_)=>audio_core::ffmpeg::decode_preview_channel(p,channel)
         }

@@ -1,9 +1,9 @@
 pub mod ffmpeg;
 mod process;
+mod streaming;
 pub use ffmpeg::AudioMetadata;
 use realfft::RealFftPlanner;
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 const FFT_N: usize = 4096;
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -26,6 +26,7 @@ pub struct AnalysisSnapshot {
     pub name:String, pub source_type:String, pub sample_rate_hz:u32, pub channels:u16,
     pub analyzed_frames:usize, pub preview_limited:bool,
     pub selected_channel:usize,
+    pub fft_window_start_sec:Option<f64>,
     pub peak_dbfs:Option<f64>, pub rms_dbfs:Option<f64>,
     pub dominant_frequency_hz:Option<f64>,
     pub waveform:Vec<WavePoint>, pub spectrum:Vec<SpectrumPoint>,
@@ -38,7 +39,6 @@ fn validate(rate:u32,channels:u16)->Result<(),String>{
         return Err("Sample rate must be 1..768000 Hz; channels 1..16".into());
     } Ok(())
 }
-fn limit(rate:u32)->usize{(rate as usize).saturating_mul(3).min(576000)}
 pub fn analyze(name:&str, kind:&str,rate:u32,channels:u16,samples:&[f64],limited:bool)->Result<AnalysisSnapshot,String>{
     validate(rate,channels)?;
     if samples.is_empty(){return Err("No audio frames".into());}
@@ -76,6 +76,7 @@ pub fn analyze(name:&str, kind:&str,rate:u32,channels:u16,samples:&[f64],limited
     Ok(AnalysisSnapshot{
         name:name.into(),source_type:kind.into(),sample_rate_hz:rate,channels,
         analyzed_frames:samples.len(),preview_limited:limited,selected_channel:0,
+        fft_window_start_sec:Some(0.0),
         peak_dbfs:level(peak),rms_dbfs:level(rms),dominant_frequency_hz:dominant,waveform,spectrum,
         metadata:None
     })
@@ -91,103 +92,17 @@ pub fn demo()->AnalysisSnapshot{
 }
 pub fn wav(path:&Path)->Result<AnalysisSnapshot,String>{ wav_channel(path,0) }
 pub fn wav_channel(path:&Path,channel:usize)->Result<AnalysisSnapshot,String>{
-    let mut reader=hound::WavReader::open(path).map_err(|e|e.to_string())?;
-    let spec=reader.spec();validate(spec.sample_rate,spec.channels)?;
-    if channel>=spec.channels as usize { return Err("Selected WAV channel is out of range".into()); }
-    let available=reader.duration() as usize;
-    let frames=available.min(limit(spec.sample_rate));
-    let count=frames.saturating_mul(spec.channels as usize);
-    let mut samples=Vec::with_capacity(frames);
-    match spec.sample_format {
-        hound::SampleFormat::Float=>{
-            for (i,r) in reader.samples::<f32>().take(count).enumerate(){
-                let v=r.map_err(|e|e.to_string())?;
-                if i%spec.channels as usize==channel{samples.push(v as f64);}
-            }
-        },
-        hound::SampleFormat::Int=>{
-            if spec.bits_per_sample<1 || spec.bits_per_sample>32{return Err("Unsupported WAV bit depth".into());}
-            let div=2_f64.powi(spec.bits_per_sample as i32-1);
-            for (i,r) in reader.samples::<i32>().take(count).enumerate(){
-                let v=r.map_err(|e|e.to_string())?;
-                if i%spec.channels as usize==channel{samples.push(v as f64/div);}
-            }
-        }
-    }
-    let mut snapshot = analyze(&path.file_name().unwrap_or_default().to_string_lossy(),&format!("WAV channel {} preview",channel+1),spec.sample_rate,spec.channels,&samples,available>frames)?;
-    snapshot.metadata = Some(AudioMetadata {
-        container:"wav".into(),codec:format!("pcm_{}bit",spec.bits_per_sample),
-        sample_rate_hz:spec.sample_rate,channels:spec.channels,
-        duration_seconds:Some(available as f64/spec.sample_rate as f64),
-        bit_rate_bps:Some(spec.sample_rate as u64 * spec.channels as u64 * spec.bits_per_sample as u64),
-        bits_per_sample:Some(spec.bits_per_sample),file_bytes:std::fs::metadata(path).map_err(|e|e.to_string())?.len(),
-        audio_stream_index:0
-    });
-    snapshot.selected_channel=channel;
-    Ok(snapshot)
+    wav_channel_at(path,channel,0.0)
+}
+pub fn wav_channel_at(path:&Path,channel:usize,fft_start_sec:f64)->Result<AnalysisSnapshot,String>{
+    streaming::wav_full(path,channel,fft_start_sec)
 }
 pub fn pcm(path:&Path,spec:&RawSpec)->Result<AnalysisSnapshot,String>{pcm_channel(path,spec,0)}
 pub fn pcm_channel(path:&Path,spec:&RawSpec,channel:usize)->Result<AnalysisSnapshot,String>{
-    validate(spec.sample_rate_hz,spec.channels)?;
-    if channel>=spec.channels as usize {return Err("Selected PCM channel is out of range".into());}
-    let width=match spec.sample_format.as_str(){"u8"|"s8"=>1,"s16"=>2,"s24"=>3,"s32"|"f32"=>4,"f64"=>8,_=>return Err("Invalid PCM format".into())};
-    let le=match spec.endianness.as_str(){"little"=>true,"big"=>false,_=>return Err("Invalid endianness".into())};
-    if spec.layout != "planar" && spec.layout != "interleaved" {
-        return Err("PCM layout must be interleaved or planar".into());
-    }
-    let frame_bytes=width*spec.channels as usize;
-    let mut file=std::fs::File::open(path).map_err(|e|e.to_string())?;
-    let bytes=file.metadata().map_err(|e|e.to_string())?.len();
-    if spec.byte_offset>=bytes{return Err("PCM header offset exceeds file size".into());}
-    let available_u64=(bytes-spec.byte_offset)/frame_bytes as u64;
-    if available_u64>usize::MAX as u64 { return Err("PCM frame count is too large".into()); }
-    let available=available_u64 as usize;
-    let count=available.min(limit(spec.sample_rate_hz));
-    if count==0 { return Err("PCM has no complete frames".into()); }
-    let start_offset=if spec.layout=="planar" {
-        spec.byte_offset.checked_add((available as u64).checked_mul(width as u64)
-            .and_then(|n|n.checked_mul(channel as u64))
-            .ok_or("PCM plane offset overflow")?).ok_or("PCM offset overflow")?
-    }else{spec.byte_offset};
-    file.seek(SeekFrom::Start(start_offset)).map_err(|e|e.to_string())?;
-    let mut frame=vec![0u8;frame_bytes];
-    let mut samples=Vec::with_capacity(count);
-    for _ in 0..count {
-        if spec.layout=="planar" {
-            file.read_exact(&mut frame[..width]).map_err(|e|e.to_string())?;
-        } else {
-            file.read_exact(&mut frame).map_err(|e|e.to_string())?;
-        }
-        let b=if spec.layout=="planar" { &frame[..width] }
-            else { &frame[channel*width..(channel+1)*width] };
-        let val=match spec.sample_format.as_str(){
-            "u8"=>(b[0] as f64-128.0)/128.0,
-            "s8"=>b[0] as i8 as f64/128.0,
-            "s16"=>(if le{i16::from_le_bytes([b[0],b[1]])}else{i16::from_be_bytes([b[0],b[1]])}) as f64/32768.0,
-            "s24"=>{
-                let u=if le{(b[0] as i32)|((b[1] as i32)<<8)|((b[2] as i32)<<16)}
-                    else{(b[2] as i32)|((b[1] as i32)<<8)|((b[0] as i32)<<16)};
-                ((u<<8)>>8) as f64/8388608.0
-            },
-            "s32"=>(if le{i32::from_le_bytes(b.try_into().unwrap())}else{i32::from_be_bytes(b.try_into().unwrap())}) as f64/2147483648.0,
-            "f32"=>(if le{f32::from_le_bytes(b.try_into().unwrap())}else{f32::from_be_bytes(b.try_into().unwrap())}) as f64,
-            "f64"=>if le{f64::from_le_bytes(b.try_into().unwrap())}else{f64::from_be_bytes(b.try_into().unwrap())},
-            _=>unreachable!()
-        };
-        samples.push(val);
-    }
-    let mut snapshot=analyze(&path.file_name().unwrap_or_default().to_string_lossy(),
-        &format!("Raw {} PCM channel {}",spec.layout,channel+1),spec.sample_rate_hz,spec.channels,&samples,available>count)?;
-    snapshot.metadata = Some(AudioMetadata {
-        container:"raw".into(),codec:spec.sample_format.clone(),
-        sample_rate_hz:spec.sample_rate_hz,channels:spec.channels,
-        duration_seconds:Some(available as f64/spec.sample_rate_hz as f64),
-        bit_rate_bps:Some(spec.sample_rate_hz as u64 * frame_bytes as u64 * 8),
-        bits_per_sample:Some((width*8) as u16),
-        file_bytes:bytes,audio_stream_index:0
-    });
-    snapshot.selected_channel=channel;
-    Ok(snapshot)
+    pcm_channel_at(path,spec,channel,0.0)
+}
+pub fn pcm_channel_at(path:&Path,spec:&RawSpec,channel:usize,fft_start_sec:f64)->Result<AnalysisSnapshot,String>{
+    streaming::pcm_full(path,spec,channel,fft_start_sec)
 }
 #[cfg(test)]
 mod tests{
@@ -236,20 +151,85 @@ use super::*;
     assert_eq!(pcm_channel(&path,&spec,1).unwrap().rms_dbfs,Some(0.0));
     std::fs::remove_file(&path).unwrap();
 }
-#[test] fn gigabyte_raw_file_preview_does_not_load_whole_file() {
+#[test] fn multi_megabyte_pcm_is_scanned_with_bounded_output() {
     use std::fs::File;
     let path=std::env::temp_dir().join(format!("aa_sparse_gb_{}.pcm",std::process::id()));
     let file=File::create(&path).unwrap();
-    file.set_len(1_073_741_824).unwrap(); // Sparse 1GiB fixture.
+    file.set_len(8_388_608).unwrap(); // Sparse 8 MiB full-file scan.
     drop(file);
     let spec=RawSpec{sample_rate_hz:48000,channels:1,sample_format:"s16".into(),
         endianness:"little".into(),byte_offset:0,layout:"interleaved".into()};
     let out=pcm(&path,&spec).unwrap();
-    assert_eq!(out.analyzed_frames,144_000);
-    assert!(out.preview_limited);
+    assert_eq!(out.analyzed_frames,4_194_304);
+    assert!(!out.preview_limited);
     assert!(out.waveform.len() <= 1_200);
     assert_eq!(out.rms_dbfs,None);
     std::fs::remove_file(&path).unwrap();
+}
+#[test] fn full_pcm_includes_samples_after_three_seconds() {
+    use std::io::Write;
+    let path=std::env::temp_dir().join(format!("aa_full_pcm_{}.pcm",std::process::id()));
+    let mut file=std::fs::File::create(&path).unwrap();
+    let rate=48000u32;
+    let count=rate*5;
+    for i in 0..count {
+        let v=if i < rate*4 { 0_i16 } else {
+            (16384.0_f64*(2.0*std::f64::consts::PI*1000.0*i as f64/rate as f64).sin()) as i16
+        };
+        file.write_all(&v.to_le_bytes()).unwrap();
+    }
+    drop(file);
+    let fmt=RawSpec{sample_rate_hz:rate,channels:1,sample_format:"s16".into(),
+        endianness:"little".into(),byte_offset:0,layout:"interleaved".into()};
+    let out=pcm_channel_at(&path,&fmt,0,4.2).unwrap();
+    assert_eq!(out.analyzed_frames,5*rate as usize);
+    assert!(!out.preview_limited);
+    assert!(out.peak_dbfs.unwrap() > -6.2);
+    assert!(out.rms_dbfs.unwrap() < -14.9);
+    assert!(out.waveform.last().unwrap().time_sec > 4.9);
+    assert_eq!(out.fft_window_start_sec,Some(4.2));
+    assert!((out.dominant_frequency_hz.unwrap()-1000.0).abs()<12.0);
+    std::fs::remove_file(path).unwrap();
+}
+#[test] fn full_pcm_planar_late_second_channel() {
+    use std::io::Write;
+    let path=std::env::temp_dir().join(format!("aa_full_planar_{}.pcm",std::process::id()));
+    let mut file=std::fs::File::create(&path).unwrap();
+    let rate=1000u32;
+    for _ in 0..(rate*5) {file.write_all(&0_i16.to_le_bytes()).unwrap();}
+    for i in 0..(rate*5) {
+        let s=if i>=rate*4 {-32768_i16} else {0_i16};
+        file.write_all(&s.to_le_bytes()).unwrap();
+    }
+    drop(file);
+    let fmt=RawSpec{sample_rate_hz:rate,channels:2,sample_format:"s16".into(),
+        endianness:"little".into(),byte_offset:0,layout:"planar".into()};
+    let a=pcm_channel(&path,&fmt,0).unwrap();
+    let b=pcm_channel(&path,&fmt,1).unwrap();
+    assert_eq!(a.rms_dbfs,None);
+    assert_eq!(b.peak_dbfs,Some(0.0));
+    assert_eq!(b.analyzed_frames,5000);
+    assert!(b.rms_dbfs.unwrap()< -6.9);
+    assert!(b.waveform.last().unwrap().max<0.0);
+    std::fs::remove_file(path).unwrap();
+}
+#[test] fn full_wav_includes_tail_and_reports_full_duration() {
+    let path=std::env::temp_dir().join(format!("aa_full_wav_{}.wav",std::process::id()));
+    let spec=hound::WavSpec{channels:1,sample_rate:48000,bits_per_sample:16,
+        sample_format:hound::SampleFormat::Int};
+    let mut writer=hound::WavWriter::create(&path,spec).unwrap();
+    for i in 0..(48000*4) {
+        writer.write_sample(if i>=48000*3 {-32768_i16} else {0_i16}).unwrap();
+    }
+    writer.finalize().unwrap();
+    let out=wav_channel_at(&path,0,3.4).unwrap();
+    assert_eq!(out.analyzed_frames,192000);
+    assert!(!out.preview_limited);
+    assert_eq!(out.peak_dbfs,Some(0.0));
+    assert!((out.rms_dbfs.unwrap()+6.020599913).abs()<0.000001);
+    assert_eq!(out.fft_window_start_sec,Some(3.4));
+    assert_eq!(out.metadata.unwrap().duration_seconds,Some(4.0));
+    std::fs::remove_file(path).unwrap();
 }
 #[test] fn raw_s24_endian_sign_extension() {
     let path=std::env::temp_dir().join(format!("aa_release_s24_{}.pcm",std::process::id()));

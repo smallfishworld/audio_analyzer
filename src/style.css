@@ -6,3 +6,12 @@
 .channel-choice select { min-width:78px; color:#e7faff; border:1px solid #335970; border-radius:7px; padding:7px 9px; background:#122639; cursor:pointer }
 .channel-choice select:disabled { opacity:.55; cursor:wait }
 @media(max-width:1150px){.file{flex-wrap:wrap}.channel-choice{margin-left:58px}}
+
+.fft-selection{display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:#102b36;border:1px solid #32626c;border-radius:12px;padding:15px 18px;margin-bottom:18px}
+.fft-selection>div{flex:1;min-width:260px}
+.fft-selection strong{color:#80dfd7;font-size:13px}
+.fft-selection p{margin:5px 0 0;color:#9bb7c5;font-size:11px;line-height:1.45}
+.fft-selection label{display:flex;align-items:center;gap:8px;color:#afc5d6;font-size:11px}
+.fft-selection input{width:108px;padding:8px;border-radius:7px;border:1px solid #44637a;background:#0d1e2b;color:#f0faff}
+.secondary-btn{background:#1b4351;color:#7de0e4;border:1px solid #427587;padding:10px 14px;border-radius:8px;font-weight:700;font-size:11px}
+.secondary-btn:disabled{opacity:.55;cursor:wait}
