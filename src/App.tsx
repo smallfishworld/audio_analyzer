@@ -4,6 +4,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { AudioLines, FolderOpen, Radio, Waves, Gauge, Activity, ChartNoAxesCombined, SlidersHorizontal, ChevronRight } from "lucide-react";
 import uPlot from "uplot";
 type RawSpec = { sampleRateHz: number; channels: number; sampleFormat: string; endianness: string; byteOffset: number; layout: "interleaved" | "planar" };
+type RawCandidate = { sampleFormat: string; endianness: string; score: number };
+type RawDetection = { suggested: RawSpec; confidence: "filename" | "heuristic" | "unknown"; inferredFields: string[]; reasons: string[]; candidates: RawCandidate[]; fileBytes: number };
 type Pt = { timeSec: number; min: number; max: number };
 type Bin = { frequencyHz: number; dbfs: number | null };
 type Metadata = { container:string; codec:string; sampleRateHz:number; channels:number; durationSeconds:number|null; bitRateBps:number|null; bitsPerSample:number|null; fileBytes:number; audioStreamIndex:number };
@@ -44,6 +46,11 @@ export default function App() {
   const [data, setData] = useState<Snapshot | null>(null);
   const [path, setPath] = useState<string | null>(null);
   const [importRaw, setImportRaw] = useState(false);
+  const [detectingRaw, setDetectingRaw] = useState(false);
+  const [rawDetection, setRawDetection] = useState<RawDetection | null>(null);
+  const [rawDetectionError, setRawDetectionError] = useState("");
+  const [rawUserEdited, setRawUserEdited] = useState(false);
+  const detectorRequest = useRef(0);
   const [raw, setRaw] = useState<RawSpec>(() => {
     try {
       const saved = localStorage.getItem("audio-analyzer.raw-v1");
@@ -76,15 +83,45 @@ export default function App() {
     } catch(e) { if (token===request.current) setError(String(e)); }
     finally { if (token===request.current) setBusy(false); }
   }
+  async function detectRaw(p: string, previous: RawSpec) {
+    const token = ++detectorRequest.current;
+    setDetectingRaw(true);
+    setRawDetectionError("");
+    setRawDetection(null);
+    setRawUserEdited(false);
+    try {
+      const detection = await invoke<RawDetection>("detect_raw_pcm", { path: p, previous });
+      if (token !== detectorRequest.current) return;
+      setRawDetection(detection);
+      setRaw(detection.suggested);
+    } catch(e) {
+      if (token === detectorRequest.current) setRawDetectionError(String(e));
+    } finally {
+      if (token === detectorRequest.current) setDetectingRaw(false);
+    }
+  }
+  function applyRawCandidate(candidate: RawCandidate) {
+    setRaw(old => ({...old, sampleFormat: candidate.sampleFormat, endianness: candidate.endianness}));
+    setRawUserEdited(true);
+  }
   async function choose() {
     try {
       const p = await open({ multiple: false, directory: false, title: "Open audio file" });
       if (typeof p !== "string") return;
       setPath(p); setFftStartSec(0);
-      if (/\.(pcm|raw|bin)$/i.test(p)) setImportRaw(true); else await analyze(p);
+      ++detectorRequest.current;
+      if (/\.(pcm|raw|bin)$/i.test(p)) {
+        setImportRaw(true);
+        void detectRaw(p, raw);
+      } else {
+        setImportRaw(false);
+        setRawDetection(null);
+        await analyze(p);
+      }
     } catch(e) { setError(String(e)); }
   }
   function setRawValue(k: keyof RawSpec, v: string) {
+    setRawUserEdited(true);
     setRaw(old => {
       const updated = { ...old, [k]: ["sampleRateHz","channels","byteOffset"].includes(k) ? Number(v) : v };
       localStorage.setItem("audio-analyzer.raw-v1", JSON.stringify(updated));
@@ -134,13 +171,42 @@ export default function App() {
     <div className="charts"><Chart title={data && !data.previewLimited && data.metadata ? "Full-file waveform · Amplitude" : "Waveform · Amplitude"} kind="wave" data={data}/><Chart title="FFT Spectrum · dBFS" kind="fft" data={data}/></div>
     <footer><span>● {data ? data.analyzedFrames.toLocaleString() + " frames" + (data.previewLimited ? " · PREVIEW ONLY" : " · FULL-FILE SCAN") : "Awaiting input"}</span><span>{ffmpeg} · M1 PREVIEW</span></footer>
   </div></main>
-  {importRaw && <div className="overlay"><div className="dialog"><h2>Import raw PCM</h2><p>Specify original capture format. Raw files have no format header.</p><div className="form">
+  {importRaw && <div className="overlay"><div className="dialog"><h2>Import raw PCM</h2>
+    <p>Raw PCM has no header. Format detection is best-effort — check the proposed values before analysis.</p>
+    <div className="raw-detection">
+      <div className="raw-detection-top">
+        <strong>{detectingRaw ? "Checking a small PCM sample…" : rawDetection ? "Automatic suggestions" : "Automatic detection"}</strong>
+        <button type="button" className="secondary-btn" disabled={detectingRaw || !path}
+          onClick={() => path && void detectRaw(path, raw)}>{detectingRaw ? "Detecting…" : "Re-detect"}</button>
+      </div>
+      {rawDetection && <>
+        <div className="raw-detection-status">
+          <span className="raw-confidence">{rawDetection.confidence === "filename" ? "Filename clues" : rawDetection.confidence === "heuristic" ? "Statistical estimate" : "Format uncertain"}</span>
+          <span>{(rawDetection.fileBytes / 1024).toFixed(1)} KiB file</span>
+          {rawUserEdited && <span className="raw-manual">Manual settings applied</span>}
+        </div>
+        <p className="raw-inferred">Inferred fields: {rawDetection.inferredFields.length ? rawDetection.inferredFields.join(", ") : "none — previous/default settings retained"}</p>
+        {rawDetection.reasons.map((msg,i) => <p className="raw-reason" key={i}>{msg}</p>)}
+        {rawDetection.candidates.length > 0 && <div className="raw-candidates">
+          <small>Alternative interpretations (not guaranteed):</small>
+          <div>{rawDetection.candidates.map((candidate,i) =>
+            <button key={candidate.sampleFormat + candidate.endianness} className="raw-candidate"
+              type="button" onClick={() => applyRawCandidate(candidate)}
+              aria-label={"Try " + candidate.sampleFormat + " " + candidate.endianness}>
+              {i+1}. {candidate.sampleFormat.toUpperCase()} {candidate.endianness === "little" ? "LE" : "BE"}
+            </button>)}</div>
+        </div>}
+      </>}
+      {rawDetectionError && <p className="raw-warning">Detection unavailable: {rawDetectionError}. You can still set the format manually.</p>}
+      {!rawDetection && !rawDetectionError && !detectingRaw && <p className="raw-reason">Set the original capture format, or use Re-detect to estimate it.</p>}
+    </div>
+    <div className="form">
     <label>Sample rate (Hz)<input type="number" min="1" value={raw.sampleRateHz} onChange={e => setRawValue("sampleRateHz",e.target.value)}/></label>
     <label>Channels<input type="number" min="1" max="16" value={raw.channels} onChange={e => setRawValue("channels",e.target.value)}/></label>
     <label>Sample format<select value={raw.sampleFormat} onChange={e => setRawValue("sampleFormat",e.target.value)}>{["u8","s8","s16","s24","s32","f32","f64"].map(x => <option key={x} value={x}>{x}</option>)}</select></label>
     <label>Byte order<select value={raw.endianness} onChange={e => setRawValue("endianness",e.target.value)}><option value="little">Little endian</option><option value="big">Big endian</option></select></label>
     <label>Header offset<input type="number" min="0" value={raw.byteOffset} onChange={e => setRawValue("byteOffset",e.target.value)}/></label>
     <label>PCM layout<select value={raw.layout} onChange={e => setRawValue("layout",e.target.value)}><option value="interleaved">Interleaved</option><option value="planar">Planar</option></select></label>
-    </div><div className="dialog-buttons"><button onClick={() => setImportRaw(false)}>Cancel</button><button className="primary" disabled={busy} onClick={() => path && void analyze(path,raw)}>Analyze PCM</button></div></div></div>}
+    </div><div className="dialog-buttons"><button onClick={() => { ++detectorRequest.current; setImportRaw(false); }}>Cancel</button><button className="primary" disabled={busy || detectingRaw} onClick={() => { if (path) { localStorage.setItem("audio-analyzer.raw-v1",JSON.stringify(raw)); void analyze(path,raw); } }}>Analyze PCM</button></div></div></div>}
   </div>;
 }
