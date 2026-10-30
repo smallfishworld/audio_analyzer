@@ -84,7 +84,7 @@ const WaveformView = forwardRef<WaveformControls, Props>(function WaveformView({
     const timer=window.setTimeout(()=>{
       const span=Math.min(view.end-view.start, duration-view.start);
       if(span<=0){setChunkLoading(false);return;}
-      void invoke<AudioChunk>("audio_chunk",{
+      void invoke<AudioChunk>("waveform_samples",{
         path:sourcePath,rawSpec:rawSpec??null,channelIndex:data.selectedChannel,
         startSec:view.start,durationSec:span
       }).then(result=>{
@@ -206,9 +206,8 @@ const WaveformView = forwardRef<WaveformControls, Props>(function WaveformView({
     const usableSamples=sampleRequested && chunk && samples.length>1;
     if (usableSamples && chunk) {
       const sampleRate=chunk.sampleRateHz;
-      // Rust seeks to an integer frame. The requested time is not always on
-      // an exact sample boundary, so align the plotted samples explicitly.
-      const sampleStart=Math.floor(chunk.startSec*sampleRate)/sampleRate;
+      // Waveform reads are aligned by Rust to the actual first source frame.
+      const sampleStart=chunk.startSec;
       const first=Math.max(0,Math.floor((view.start-sampleStart)*sampleRate));
       const last=Math.min(samples.length,Math.ceil((view.end-sampleStart)*sampleRate));
       if(last-first <= plotW*3) {

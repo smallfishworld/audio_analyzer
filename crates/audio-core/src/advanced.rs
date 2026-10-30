@@ -7,6 +7,7 @@ use std::{fs::File, io::{BufReader, Read, Seek, SeekFrom}, path::Path};
 
 const MAX_ANALYSIS_FRAMES: usize = 2_097_152;
 const MAX_PLAY_SECONDS: f64 = 2.0;
+const MAX_WAVE_SAMPLE_FRAMES: usize = 65536;
 const MAX_COLUMNS: usize = 220;
 const BINS_PER_COLUMN: usize = 256;
 
@@ -35,6 +36,12 @@ pub struct Detail {
     pub peak_dbfs: Option<f64>, pub rms_dbfs: Option<f64>,
     pub spectrum: Vec<SpectrumBin>, pub peaks: Vec<Peak>,
     pub spectrogram: Spectrogram,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct WaveSamples {
+    pub start_sec:f64, pub sample_rate_hz:u32, pub samples:Vec<f64>,
 }
 
 #[derive(Serialize)]
@@ -234,6 +241,19 @@ pub fn analyze_range(path:&Path,raw:Option<&RawSpec>,channel:usize,
     })
 }
 
+/// Exact source amplitudes for waveform zoom. Unlike audio_chunk, this never
+/// clips floating PCM outside [-1,1] and is independent of audio output.
+pub fn waveform_samples(path:&Path,raw:Option<&RawSpec>,channel:usize,
+                        start_sec:f64,duration_sec:f64)->Result<WaveSamples,String>{
+    let (rate,samples)=source_samples(path,raw,channel,
+        start_sec,duration_sec,MAX_WAVE_SAMPLE_FRAMES)?;
+    if samples.iter().any(|x|!x.is_finite()) {
+        return Err("Audio contains non-finite samples".into());
+    }
+    let aligned_start=(start_sec*rate as f64).floor()/rate as f64;
+    Ok(WaveSamples{start_sec:aligned_start,sample_rate_hz:rate,samples})
+}
+
 pub fn audio_chunk(path:&Path,raw:Option<&RawSpec>,channel:usize,
                    start_sec:f64,duration_sec:f64)->Result<AudioChunk,String> {
     if duration_sec>MAX_PLAY_SECONDS {return Err("Playback chunks are limited to 2 seconds".into());}
@@ -246,6 +266,21 @@ pub fn audio_chunk(path:&Path,raw:Option<&RawSpec>,channel:usize,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test] fn float_waveform_retains_over_fullscale_samples_while_audition_clamps() {
+        let path=std::env::temp_dir().join(format!("aa_float_over_{}.pcm",std::process::id()));
+        let mut bytes=Vec::new();
+        for value in [1.5f32,-1.25,0.5,0.0] {bytes.extend_from_slice(&value.to_le_bytes());}
+        std::fs::write(&path,bytes).unwrap();
+        let spec=RawSpec{sample_rate_hz:8000,channels:1,sample_format:"f32".into(),
+            endianness:"little".into(),byte_offset:0,layout:"interleaved".into()};
+        let display=waveform_samples(&path,Some(&spec),0,0.0,0.0005).unwrap();
+        assert_eq!(display.samples,vec![1.5,-1.25,0.5,0.0]);
+        let audition=audio_chunk(&path,Some(&spec),0,0.0,0.0005).unwrap();
+        assert_eq!(audition.samples,vec![1.0,-1.0,0.5,0.0]);
+        std::fs::remove_file(path).unwrap();
+    }
+
     #[test] fn sixty_second_4khz_file_has_valid_full_overview_and_true_zoom_samples() {
         use std::io::Write;
         let path=std::env::temp_dir().join(format!("aa_60s_4khz_{}.pcm",std::process::id()));
@@ -266,7 +301,7 @@ mod tests {
         assert_eq!(full.waveform.len(),1200);
         assert!(full.waveform.iter().all(|p|p.min< -0.99 && p.max>0.99));
         // Full overview is an envelope by definition, not a sample trace.
-        let raw=audio_chunk(&path,Some(&spec),0,0.017,0.0125).unwrap();
+        let raw=waveform_samples(&path,Some(&spec),0,0.017,0.0125).unwrap();
         assert_eq!(raw.sample_rate_hz,rate);
         assert_eq!(raw.samples.len(),400);
         for i in 0..raw.samples.len() {

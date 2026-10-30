@@ -39,7 +39,7 @@ test.beforeEach(async ({ page }) => {
                   : -110+110*Math.exp(-Math.pow((y-64-x/4)/15,2))))}
           };
         }
-        if(command==="audio_chunk")return {startSec:args?.startSec??0,sampleRateHz:32000,
+        if(command==="audio_chunk"||command==="waveform_samples")return {startSec:args?.startSec??0,sampleRateHz:32000,
           samples:Array.from({length:8192},(_,i)=>
             localStorage.getItem("fixture_dense_waveform")==="yes"
               ? Math.sin(2*Math.PI*4000*i/32000)
