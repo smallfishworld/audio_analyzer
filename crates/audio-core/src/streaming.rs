@@ -79,7 +79,7 @@ impl FullFileAccumulator {
     }
 }
 
-fn width(format: &str) -> Result<usize, String> {
+pub(super) fn width(format: &str) -> Result<usize, String> {
     match format {
         "u8" | "s8" => Ok(1),
         "s16" => Ok(2),
@@ -90,7 +90,7 @@ fn width(format: &str) -> Result<usize, String> {
     }
 }
 
-fn sample_value(format: &str, little: bool, b: &[u8]) -> f64 {
+pub(super) fn sample_value(format: &str, little: bool, b: &[u8]) -> f64 {
     match format {
         "u8" => (b[0] as f64 - 128.0) / 128.0,
         "s8" => (b[0] as i8 as f64) / 128.0,
