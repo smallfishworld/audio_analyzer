@@ -183,7 +183,7 @@ test("60-second 4kHz PCM uses real sample cycles instead of a filled rectangle",
   });
   expect(colored.count).toBeGreaterThan(1200);
   expect(colored.count/colored.area).toBeLessThan(0.35);
-  await page.getByRole("button",{name:"Fit entire file"}).click();
+  await page.getByRole("button",{name:"Fit entire file",exact:true}).click();
   await expect(page.getByText(/MIN\/MAX OVERVIEW/)).toBeVisible();
   await page.getByRole("button",{name:"Show sample detail"}).first().click();
   await expect(page.getByText(/RAW SAMPLES ·/)).toBeVisible();
