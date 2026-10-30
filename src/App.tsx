@@ -117,7 +117,8 @@ export default function App() {
   async function runDetail(p:string,spec:RawSpec|null,channel:number,start:number,length:number,
                             size=fftSize,win=windowName) {
     const id=++detailRequest.current;
-    setDetailBusy(true);setDetailError("");
+    // Never keep measurements from a previous selection visible while a new range is pending.
+    setDetail(null);setDetailBusy(true);setDetailError("");
     try{
       const result=await invoke<Detail>("analyze_range",{
         path:p,rawSpec:spec,channelIndex:channel,startSec:start,
