@@ -129,7 +129,7 @@ export default function App() {
             onChange={e => setFftStartSec(Number(e.target.value))}/>
         </label>
         <button className="secondary-btn" disabled={busy}
-          onClick={() => void analyze(path, /\\.(pcm|raw|bin)$/i.test(path) ? raw : null, data.selectedChannel, fftStartSec)}>Update FFT</button>
+          onClick={() => void analyze(path, /\.(pcm|raw|bin)$/i.test(path) ? raw : null, data.selectedChannel, fftStartSec)}>Update FFT</button>
       </div>}
     <div className="charts"><Chart title={data && !data.previewLimited && data.metadata ? "Full-file waveform · Amplitude" : "Waveform · Amplitude"} kind="wave" data={data}/><Chart title="FFT Spectrum · dBFS" kind="fft" data={data}/></div>
     <footer><span>● {data ? data.analyzedFrames.toLocaleString() + " frames" + (data.previewLimited ? " · PREVIEW ONLY" : " · FULL-FILE SCAN") : "Awaiting input"}</span><span>{ffmpeg} · M1 PREVIEW</span></footer>
